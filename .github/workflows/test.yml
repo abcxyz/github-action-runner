@@ -1,0 +1,29 @@
+# Workflow for running tests. Linting should automatically run on your
+# repository without any additional configuration.
+name: 'test'
+
+on:
+  push:
+    branches:
+      - 'main'
+  pull_request:
+    branches:
+      - 'main'
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: '${{ github.workflow }}-${{ github.head_ref || github.ref }}'
+  cancel-in-progress: true
+
+jobs:
+  # TODO: uncomment the jobs that are relevant to your repo and delete this
+  # example step.
+  example:
+    if: '${{ false }}'
+    runs-on: 'ubuntu-latest'
+    steps:
+      - run: 'echo "TODO"'
+
+  # go_test:
+  #   uses: 'abcxyz/actions/.github/workflows/go-test.yml@main' # ratchet:exclude
