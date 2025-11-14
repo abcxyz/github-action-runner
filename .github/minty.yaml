@@ -1,0 +1,21 @@
+version: 'minty.abcxyz.dev/v2'
+
+rule:
+  if: |-
+    assertion.iss == issuers.github &&
+    assertion.repository_owner_id == '93787867' &&
+    assertion.repository_id == '1093662716' &&
+    assertion.ref == 'refs/heads/main'
+
+scope:
+  make-pr:
+    rule:
+      if: |-
+        (assertion.workflow_ref.startsWith("abcxyz/github-action-runner/.github/workflows/smoke-test.yml") ||
+         assertion.workflow_ref.startsWith("abcxyz/github-action-runner/.github/workflows/smoke-test-minty.yml")) &&
+        assertion.job_workflow_ref.startsWith("abcxyz/github-action-runner/.github/workflows/smoke-test-minty.yml")
+    repositories:
+      - 'github-action-runner'
+    permissions:
+      contents: 'write'
+      pull_requests: 'write'
