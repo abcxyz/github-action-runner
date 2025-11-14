@@ -9,7 +9,8 @@ on:
       - 'main'
 
 concurrency:
-  group: 'ci'
+  group: '${{ github.workflow }}-${{ github.head_ref || github.ref }}'
+  cancel-in-progress: true
 
 env:
   WIF_PROVIDER: 'projects/712187603283/locations/global/workloadIdentityPools/github-automation/providers/gar-ci-i'
@@ -36,7 +37,7 @@ env:
   INTEGRATION_RUNNER_SERVICE_ACCOUNT: 'projects/abcxyz-gar-runner-i-4f/serviceAccounts/abcxyz-gar-runner-sa@abcxyz-gar-runner-i-4f.iam.gserviceaccount.com'
 
 jobs:
-  build:
+  build-integration:
     runs-on: 'ubuntu-latest'
     permissions:
       contents: 'read'
@@ -67,8 +68,8 @@ jobs:
           tags: '${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }},${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:integration'
 
   # Pass the latest built runner image to the repo dedicated dispatcher
-  deploy-dispatcher:
-    needs: ['build']
+  deploy-dispatcher-integration:
+    needs: ['build-integration']
     runs-on: 'ubuntu-latest'
     permissions:
       contents: 'read'
@@ -124,8 +125,8 @@ jobs:
             --set-secrets="${WEBHOOK_SECRET_MOUNT_PATH}/${WEBHOOK_SECRET_NAME}=${WEBHOOK_SECRET_NAME}:${WEBHOOK_SECRET_VERSION}" \
             --env-vars-file=/tmp/env_vars
 
-  smoke-tests:
-    needs: ['deploy-dispatcher']
+  smoke-tests-integration:
+    needs: ['deploy-dispatcher-integration']
     uses: './.github/workflows/smoke-tests.yml'
     permissions:
       contents: 'read'
@@ -133,8 +134,15 @@ jobs:
     with:
       runs-on: 'github-action-runner-integration' # unable to use env here
 
+  # Used as indicator for merge queue
+  smoke-tests-passed-integration:
+    runs-on: 'ubuntu-latest'
+    needs: ['smoke-tests-integration']
+    steps:
+      - run: 'echo \"All runner tests passed in integration\"'
+
   build-autopush:
-    needs: ['smoke-tests']
+    needs: ['smoke-tests-passed-integration']
     if: |-
       ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: 'ubuntu-latest'
