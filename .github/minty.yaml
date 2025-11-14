@@ -11,7 +11,7 @@ scope:
   make-pr:
     rule:
       if: |-
-        (assertion.workflow_ref.startsWith("abcxyz/github-action-runner/.github/workflows/smoke-test.yml") ||
+        (assertion.workflow_ref.startsWith("abcxyz/github-action-runner/.github/workflows/smoke-tests.yml") ||
          assertion.workflow_ref.startsWith("abcxyz/github-action-runner/.github/workflows/smoke-test-minty.yml")) &&
         assertion.job_workflow_ref.startsWith("abcxyz/github-action-runner/.github/workflows/smoke-test-minty.yml")
     repositories:
