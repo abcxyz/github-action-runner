@@ -8,14 +8,32 @@ on:
     branches:
       - 'main'
 
+concurrency:
+  group: 'ci'
+
 env:
   WIF_PROVIDER: 'projects/712187603283/locations/global/workloadIdentityPools/github-automation/providers/gar-ci-i'
   WIF_SERVICE_ACCOUNT: 'github-automation-bot@gha-gar-ci-i-be70aa.iam.gserviceaccount.com'
   DOCKER_REGISTRY: 'us-central1-docker.pkg.dev'
   DOCKER_REPO: 'us-central1-docker.pkg.dev/github-action-runner-i-02/ci-images'
-
-  IMAGE_TAG: 'ci-${{ github.run_id }}-${{ github.run_number }}'
   IMAGE_NAME: 'github-action-runner'
+  IMAGE_TAG: 'ci-${{ github.run_id }}-${{ github.run_number }}'
+
+  # TODO (shankiyani): Once a stable image is available from the dispatcher replace this
+  DISPATCHER_DOCKER_REGISTRY: 'us-central1-docker.pkg.dev'
+  DISPATCHER_DOCKER_REPO: 'us-central1-docker.pkg.dev/gad-i-e3/ci-images'
+  DISPATCHER_IMAGE_NAME: 'github-action-dispatcher'
+  DISPATCHER_IMAGE_TAG: 'ci-19188052975-901'
+
+  DISPATCHER_SERVICE_NAME: 'github-action-dispatcher-23db'
+  DISPATCHER_PROJECT_ID: 'github-action-runner-i-02'
+  DISPATCHER_REGION: 'us-central1'
+  DISPATCHER_SERVICE_ACCOUNT: 'gad-webhook-sa@github-action-runner-i-02.iam.gserviceaccount.com'
+
+  INTEGRATION_RUNNER_LABEL: 'github-action-runner-integration'
+  INTEGRATION_RUNNER_LOCATION: 'us-central1'
+  INTEGRATION_RUNNER_PROJECT_ID: 'abcxyz-gar-runner-i-4f'
+  INTEGRATION_RUNNER_SERVICE_ACCOUNT: 'projects/abcxyz-gar-runner-i-4f/serviceAccounts/abcxyz-gar-runner-sa@abcxyz-gar-runner-i-4f.iam.gserviceaccount.com'
 
 jobs:
   build:
@@ -44,11 +62,79 @@ jobs:
       - name: 'Build and push runner image'
         uses: 'docker/build-push-action@5176d81f87c23d6fc96624dfdbcd9f3830bbe445' # ratchet:docker/build-push-action@v6.5.0
         with:
-          context: '.'
+          context: './runner'
           push: true
-          tags: '${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}'
+          tags: '${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }},${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:integration'
+
+  # Pass the latest built runner image to the repo dedicated dispatcher
+  deploy-dispatcher:
+    needs: ['build']
+    runs-on: 'ubuntu-latest'
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+    env:
+      GITHUB_APP_ID: '2274453'
+      KMS_APP_PRIVATE_KEY_ID: 'projects/github-action-runner-i-02/locations/us-central1/keyRings/gad-ea-key-ring/cryptoKeys/gad-ea-pk/cryptoKeyVersions/1'
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # ratchet:actions/checkout@v4
+
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@a6e2e39c0a0331da29f7fd2c2a20a427e8d3ad1f' # ratchet:google-github-actions/auth@v2
+        with:
+          workload_identity_provider: '${{ env.WIF_PROVIDER }}'
+          service_account: '${{ env.WIF_SERVICE_ACCOUNT }}'
+          token_format: 'access_token'
+
+      - name: 'Setup gcloud'
+        uses: 'google-github-actions/setup-gcloud@6189d56e4096ee891640bb02ac264be376592d6a' # ratchet:google-github-actions/setup-gcloud@v2
+        with:
+          version: '529.0.0'
+
+      - name: 'Deploy to Cloud Run'
+        id: 'deploy'
+        run: |-
+          WEBHOOK_SECRET_MOUNT_PATH="/etc/secrets/webhook/key"
+          WEBHOOK_SECRET_NAME="webhook-key"
+          WEBHOOK_SECRET_VERSION="latest"
+
+          cat > /tmp/env_vars <<EOF
+          GITHUB_APP_ID: '${{ env.GITHUB_APP_ID }}'
+          KMS_APP_PRIVATE_KEY_ID: '${{ env.KMS_APP_PRIVATE_KEY_ID }}'
+          RUNNER_IMAGE_NAME: '${{ env.IMAGE_NAME }}'
+          RUNNER_IMAGE_TAG: '${{ env.IMAGE_TAG }}'
+          RUNNER_LABEL: '${{ env.INTEGRATION_RUNNER_LABEL }}'
+          RUNNER_LOCATION: '${{ env.INTEGRATION_RUNNER_LOCATION }}'
+          RUNNER_PROJECT_ID: '${{ env.INTEGRATION_RUNNER_PROJECT_ID }}'
+          RUNNER_REPOSITORY_ID: '${{ env.DOCKER_REPO }}'
+          RUNNER_SERVICE_ACCOUNT: '${{ env.INTEGRATION_RUNNER_SERVICE_ACCOUNT }}'
+          WEBHOOK_KEY_MOUNT_PATH: '${WEBHOOK_SECRET_MOUNT_PATH}'
+          WEBHOOK_KEY_NAME: '${WEBHOOK_SECRET_NAME}'
+          EOF
+
+          gcloud run deploy "${{ env.DISPATCHER_SERVICE_NAME }}" \
+            --project="${{ env.DISPATCHER_PROJECT_ID }}" \
+            --region="${{ env.DISPATCHER_REGION }}" \
+            --service-account="${{ env.DISPATCHER_SERVICE_ACCOUNT }}" \
+            --image="${{ env.DISPATCHER_DOCKER_REPO }}/${{ env.DISPATCHER_IMAGE_NAME }}:${{ env.DISPATCHER_IMAGE_TAG }}-amd64" \
+            --ingress=internal-and-cloud-load-balancing \
+            --no-allow-unauthenticated \
+            --set-secrets="${WEBHOOK_SECRET_MOUNT_PATH}/${WEBHOOK_SECRET_NAME}=${WEBHOOK_SECRET_NAME}:${WEBHOOK_SECRET_VERSION}" \
+            --env-vars-file=/tmp/env_vars
+
+  smoke-tests:
+    needs: ['deploy-dispatcher']
+    uses: './.github/workflows/smoke-tests.yml'
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+    with:
+      runs-on: 'github-action-runner-integration' # unable to use env here
 
   build-autopush:
+    needs: ['smoke-tests']
     if: |-
       ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: 'ubuntu-latest'
@@ -76,7 +162,6 @@ jobs:
       - name: 'Build and push runner image'
         uses: 'docker/build-push-action@5176d81f87c23d6fc96624dfdbcd9f3830bbe445' # ratchet:docker/build-push-action@v6.5.0
         with:
-          context: '.'
+          context: './runner'
           push: true
           tags: '${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }},${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:autopush'
-
