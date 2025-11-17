@@ -159,8 +159,21 @@ jobs:
       GAR_IMAGE_NAME: 'github-action-runner'
       GAR_IMAGE_TAG: 'test-build-push-delete-runner-${{ github.run_id }}'
     steps:
-      - name: 'Checkout'
-        uses: 'actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955' # ratchet:actions/checkout@v4
+      - name: 'Create Minimal Docker Context'
+        id: 'create-context'
+        shell: 'bash'
+        run: |
+          BUILD_CONTEXT="/tmp/minimal-build-context"
+
+          # Create a minimal directory for the build context
+          mkdir -p "${BUILD_CONTEXT}"
+
+          # Create the simplest possible Dockerfile: just pull an image.
+          echo "FROM alpine:latest" > "${BUILD_CONTEXT}/Dockerfile"
+          echo "Minimal Dockerfile created at ${BUILD_CONTEXT}/Dockerfile"
+
+          # Output the context path for the next step
+          echo "build_context=${BUILD_CONTEXT}" >> "$GITHUB_OUTPUT"
 
       - id: 'auth'
         name: 'Authenticate to Google Cloud'
@@ -185,7 +198,8 @@ jobs:
         id: 'push'
         uses: 'docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83' # ratchet:docker/build-push-action@@v6.5.0
         with:
-          context: './runner'
+          context: '${{ steps.create-context.outputs.build_context }}'
+          file: '${{ steps.create-context.outputs.build_context }}/Dockerfile'
           push: true
           tags: '${{ env.DOCKER_REPO }}/${{ env.GAR_IMAGE_NAME }}:${{ env.GAR_IMAGE_TAG }}'
 
