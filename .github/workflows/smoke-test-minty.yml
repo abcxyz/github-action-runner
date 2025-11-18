@@ -36,7 +36,7 @@ jobs:
     env:
       REPOSITORY_NAME: 'github-action-runner'
       TEST_FILE: 'test-file.txt'
-      HEAD_BRANCH: 'integration-test-create-pr'
+      HEAD_BRANCH: 'test/minty-create-pr'
     steps:
       - name: 'Checkout'
         uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # ratchet:actions/checkout@v4
@@ -45,21 +45,6 @@ jobs:
 
       - name: 'Create unique file content'
         run: 'echo "hello $(date +%s)" > ${{ env.TEST_FILE }}'
-
-      - name: 'Commit created file'
-        run: |
-          # Configure Git user details
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
-
-          # Stage the file
-          git add ${{ env.TEST_FILE }}
-
-          # Commit the staged file. This command will fail the step if no changes are staged.
-          git commit -m "chore(test): Update file from automated smoke test from ${{ env.REPOSITORY_NAME }} repo"
-
-          # PUSH the commit to the remote head branch
-          git push origin HEAD:${{ env.HEAD_BRANCH }}
 
       - name: 'Auth minty'
         id: 'minty-auth'
