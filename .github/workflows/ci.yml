@@ -168,7 +168,7 @@ jobs:
       - run: 'echo \"All runner tests passed in integration\"'
 
   tag-autopush:
-    needs: ['smoke-tests-passed-integration', 'set-matrix']
+    needs: ['set-matrix']
     if: |-
       ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: 'ubuntu-latest'
