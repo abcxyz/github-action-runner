@@ -38,11 +38,32 @@ env:
   INTEGRATION_RUNNER_SERVICE_ACCOUNT: 'projects/abcxyz-gar-runner-i-4f/serviceAccounts/abcxyz-gar-runner-sa@abcxyz-gar-runner-i-4f.iam.gserviceaccount.com'
 
 jobs:
-  build-integration:
+  set-matrix:
+    runs-on: 'ubuntu-latest'
+    outputs:
+      runner_contexts: '${{ steps.get-contexts.outputs.contexts }}'
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # ratchet:actions/checkout@v4
+
+      - name: 'Get Docker Build Contexts'
+        id: 'get-contexts'
+        run: |
+          # Find all subdirectories in ./runner, format as JSON array
+          CONTEXTS=$(find runner -mindepth 1 -maxdepth 1 -type d | sed 's|^runner/||' | jq -R . | jq -s -c .)
+          echo "Discovered contexts: $CONTEXTS"
+          echo "contexts=$CONTEXTS" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: ['set-matrix']
     runs-on: 'ubuntu-latest'
     permissions:
       contents: 'read'
       id-token: 'write'
+    strategy:
+      fail-fast: false
+      matrix:
+        context: '${{ fromJson(needs.set-matrix.outputs.runner_contexts) }}'
     steps:
       - name: 'Checkout'
         uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # ratchet:actions/checkout@v4
@@ -64,12 +85,12 @@ jobs:
       - name: 'Build and push runner image'
         uses: 'docker/build-push-action@5176d81f87c23d6fc96624dfdbcd9f3830bbe445' # ratchet:docker/build-push-action@v6.5.0
         with:
-          context: './runner'
+          context: './runner/${{ matrix.context }}'
           push: true
-          tags: '${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }},${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:integration'
+          tags: '${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ matrix.context }}-${{ env.IMAGE_TAG }},${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ github.sha }},${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ matrix.context }}-integration'
 
   deploy-dispatcher-integration:
-    needs: ['build-integration']
+    needs: ['build']
     if: |-
       ${{ github.event_name == 'merge_group' }}
     runs-on: 'ubuntu-latest'
@@ -107,7 +128,7 @@ jobs:
           GITHUB_APP_ID: '${{ env.GITHUB_APP_ID }}'
           KMS_APP_PRIVATE_KEY_ID: '${{ env.KMS_APP_PRIVATE_KEY_ID }}'
           RUNNER_IMAGE_NAME: '${{ env.IMAGE_NAME }}'
-          RUNNER_IMAGE_TAG: '${{ env.IMAGE_TAG }}'
+          RUNNER_IMAGE_TAG: 'ubuntu-24-04-${{ env.IMAGE_TAG }}'
           RUNNER_LABEL: '${{ env.INTEGRATION_RUNNER_LABEL }}'
           RUNNER_LOCATION: '${{ env.INTEGRATION_RUNNER_LOCATION }}'
           RUNNER_PROJECT_ID: '${{ env.INTEGRATION_RUNNER_PROJECT_ID }}'
@@ -136,7 +157,7 @@ jobs:
       contents: 'read'
       id-token: 'write'
     with:
-      runs-on: 'github-action-runner-integration' # unable to use env here
+      runs-on: 'github-action-runner-integration'
 
   smoke-tests-passed-integration:
     needs: ['smoke-tests-integration']
@@ -146,14 +167,18 @@ jobs:
     steps:
       - run: 'echo \"All runner tests passed in integration\"'
 
-  build-autopush:
-    needs: ['smoke-tests-passed-integration']
+  tag-autopush:
+    needs: ['smoke-tests-passed-integration', 'set-matrix']
     if: |-
       ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: 'ubuntu-latest'
     permissions:
       contents: 'read'
       id-token: 'write'
+    strategy:
+      fail-fast: false
+      matrix:
+        context: '${{ fromJson(needs.set-matrix.outputs.runner_contexts) }}'
     steps:
       - name: 'Checkout'
         uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # ratchet:actions/checkout@v4
@@ -172,9 +197,20 @@ jobs:
           password: '${{ steps.auth.outputs.access_token }}'
           registry: '${{ env.DOCKER_REGISTRY }}'
 
-      - name: 'Build and push runner image'
-        uses: 'docker/build-push-action@5176d81f87c23d6fc96624dfdbcd9f3830bbe445' # ratchet:docker/build-push-action@v6.5.0
-        with:
-          context: './runner'
-          push: true
-          tags: '${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }},${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:autopush'
+      - name: 'Retag runner image (${{ matrix.context }})'
+        run: |
+          # 1. Define the source and destination tags
+          SOURCE_IMAGE_TAG="${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ matrix.context }}-${{ env.IMAGE_TAG }}"
+          DEST_IMAGE_TAG="${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ matrix.context }}-autopush"
+
+          # 2. Pull the existing image to runner's local Docker daemon
+          echo "Pulling source image: $SOURCE_IMAGE_TAG"
+          docker pull "$SOURCE_IMAGE_TAG"
+
+          # 3. Apply the new tag locally
+          echo "Retagging image: $DEST_IMAGE_TAG"
+          docker tag "$SOURCE_IMAGE_TAG" "$DEST_IMAGE_TAG"
+
+          # 4. Push the image with the new tag to the registry
+          echo "Pushing new tag: $DEST_IMAGE_TAG"
+          docker push "$DEST_IMAGE_TAG"
