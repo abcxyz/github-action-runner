@@ -68,9 +68,10 @@ jobs:
           push: true
           tags: '${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }},${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:integration'
 
-  # Pass the latest built runner image to the repo dedicated dispatcher
   deploy-dispatcher-integration:
     needs: ['build-integration']
+    if: |-
+      ${{ github.event_name == 'merge_group' }}
     runs-on: 'ubuntu-latest'
     permissions:
       contents: 'read'
@@ -128,6 +129,8 @@ jobs:
 
   smoke-tests-integration:
     needs: ['deploy-dispatcher-integration']
+    if: |-
+      ${{ github.event_name == 'merge_group' }}
     uses: './.github/workflows/smoke-tests.yml'
     permissions:
       contents: 'read'
@@ -135,10 +138,11 @@ jobs:
     with:
       runs-on: 'github-action-runner-integration' # unable to use env here
 
-  # Used as indicator for merge queue
   smoke-tests-passed-integration:
-    runs-on: 'ubuntu-latest'
     needs: ['smoke-tests-integration']
+    if: |-
+      ${{ github.event_name == 'merge_group' }}
+    runs-on: 'ubuntu-latest'
     steps:
       - run: 'echo \"All runner tests passed in integration\"'
 
