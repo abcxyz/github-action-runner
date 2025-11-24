@@ -88,7 +88,7 @@ jobs:
         with:
           context: './runner/${{ matrix.context }}'
           push: true
-          tags: '${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ matrix.context }}-${{ env.IMAGE_TAG }},${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ github.sha }},${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ matrix.context }}-integration'
+          tags: '${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}-${{ matrix.context }},${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ github.sha }}-${{ matrix.context }},${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:integration-${{ matrix.context }}'
 
   deploy-dispatcher:
     needs: ['build']
@@ -129,7 +129,7 @@ jobs:
           GITHUB_APP_ID: '${{ env.GITHUB_APP_ID }}'
           KMS_APP_PRIVATE_KEY_ID: '${{ env.KMS_APP_PRIVATE_KEY_ID }}'
           RUNNER_IMAGE_NAME: '${{ env.IMAGE_NAME }}'
-          RUNNER_IMAGE_TAG: 'ubuntu-24-04-${{ env.IMAGE_TAG }}'
+          RUNNER_IMAGE_TAG: '${{ env.IMAGE_TAG }}-ubuntu-24-04'
           RUNNER_LABEL: '${{ env.INTEGRATION_RUNNER_LABEL }}'
           RUNNER_LOCATION: '${{ env.INTEGRATION_RUNNER_LOCATION }}'
           RUNNER_PROJECT_ID: '${{ env.INTEGRATION_RUNNER_PROJECT_ID }}'
@@ -207,8 +207,9 @@ jobs:
           registry: '${{ env.DOCKER_REGISTRY }}'
 
       - name: 'Retag runner image (${{ matrix.context }})'
+        env:
+          SOURCE_IMAGE: '${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}-${{ matrix.context }}'
+          DEST_IMAGE: '${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:autopush-${{ matrix.context }}'
         run: |
-          SOURCE_IMAGE="${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ matrix.context }}-${{ env.IMAGE_TAG }}"
-          DEST_IMAGE="${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ matrix.context }}-autopush"
-          echo "Tagging ${SOURCE_IMAGE} as ${DEST_IMAGE}..."
-          gcloud container images add-tag "${SOURCE_IMAGE}" "${DEST_IMAGE}" --quiet
+          echo "Tagging ${{ env.SOURCE_IMAGE }} as ${{ env.DEST_IMAGE }}..."
+          gcloud container images add-tag "${{ env.SOURCE_IMAGE }}" "${{ env.DEST_IMAGE }}" --quiet
