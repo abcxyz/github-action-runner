@@ -14,28 +14,29 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  WIF_PROVIDER: 'projects/712187603283/locations/global/workloadIdentityPools/github-automation/providers/gar-ci-i'
-  WIF_SERVICE_ACCOUNT: 'github-automation-bot@gha-gar-ci-i-be70aa.iam.gserviceaccount.com'
   DOCKER_REGISTRY: 'us-central1-docker.pkg.dev'
   DOCKER_REPO: 'us-central1-docker.pkg.dev/github-action-runner-i-02/ci-images'
   IMAGE_NAME: 'github-action-runner'
   IMAGE_TAG: 'ci-${{ github.run_id }}-${{ github.run_number }}'
 
-  # TODO (shankiyani): Once a stable image is available from the dispatcher replace this
-  DISPATCHER_DOCKER_REGISTRY: 'us-central1-docker.pkg.dev'
-  DISPATCHER_DOCKER_REPO: 'us-central1-docker.pkg.dev/gad-i-e3/ci-images'
+  DISPATCHER_DOCKER_REPO: 'us-central1-docker.pkg.dev/abcxyz-artifacts/docker-images'
   DISPATCHER_IMAGE_NAME: 'github-action-dispatcher'
-  DISPATCHER_IMAGE_TAG: 'ci-19188052975-901'
-
-  DISPATCHER_SERVICE_NAME: 'github-action-dispatcher-23db'
-  DISPATCHER_PROJECT_ID: 'github-action-runner-i-02'
-  DISPATCHER_REGION: 'us-central1'
-  DISPATCHER_SERVICE_ACCOUNT: 'gad-webhook-sa@github-action-runner-i-02.iam.gserviceaccount.com'
+  DISPATCHER_VERSION: 'v0.0.0'
 
   INTEGRATION_RUNNER_LABEL: 'github-action-runner-integration'
   INTEGRATION_RUNNER_LOCATION: 'us-central1'
   INTEGRATION_RUNNER_PROJECT_ID: 'abcxyz-gar-runner-i-4f'
   INTEGRATION_RUNNER_SERVICE_ACCOUNT: 'projects/abcxyz-gar-runner-i-4f/serviceAccounts/abcxyz-gar-runner-sa@abcxyz-gar-runner-i-4f.iam.gserviceaccount.com'
+
+  INTEGRATION_PROJECT_ID: 'github-action-runner-i-02'
+  INTEGRATION_REGION: 'us-central1'
+  INTEGRATION_SERVICE_ACCOUNT: 'gad-webhook-sa@github-action-runner-i-02.iam.gserviceaccount.com'
+  INTEGRATION_SERVICE_NAME: 'github-action-dispatcher-23db'
+  INTEGRATION_WIF_PROVIDER: 'projects/712187603283/locations/global/workloadIdentityPools/github-automation/providers/gar-ci-i'
+  INTEGRATION_WIF_SERVICE_ACCOUNT: 'github-automation-bot@gha-gar-ci-i-be70aa.iam.gserviceaccount.com'
+
+  AUTOPUSH_WIF_PROVIDER: 'projects/612015178317/locations/global/workloadIdentityPools/github-automation/providers/gar-ci-a'
+  AUTOPUSH_WIF_SERVICE_ACCOUNT: 'github-automation-bot@gha-gar-ci-a-be70aa.iam.gserviceaccount.com'
 
 jobs:
   set-matrix:
@@ -72,8 +73,8 @@ jobs:
         name: 'Authenticate to Google Cloud'
         uses: 'google-github-actions/auth@a6e2e39c0a0331da29f7fd2c2a20a427e8d3ad1f' # ratchet:google-github-actions/auth@v2
         with:
-          workload_identity_provider: '${{ env.WIF_PROVIDER }}'
-          service_account: '${{ env.WIF_SERVICE_ACCOUNT }}'
+          workload_identity_provider: '${{ env.INTEGRATION_WIF_PROVIDER }}'
+          service_account: '${{ env.INTEGRATION_WIF_SERVICE_ACCOUNT }}'
           token_format: 'access_token'
 
       - uses: 'docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772' # ratchet:docker/login-action@v3
@@ -108,8 +109,8 @@ jobs:
         name: 'Authenticate to Google Cloud'
         uses: 'google-github-actions/auth@a6e2e39c0a0331da29f7fd2c2a20a427e8d3ad1f' # ratchet:google-github-actions/auth@v2
         with:
-          workload_identity_provider: '${{ env.WIF_PROVIDER }}'
-          service_account: '${{ env.WIF_SERVICE_ACCOUNT }}'
+          workload_identity_provider: '${{ env.INTEGRATION_WIF_PROVIDER }}'
+          service_account: '${{ env.INTEGRATION_WIF_SERVICE_ACCOUNT }}'
           token_format: 'access_token'
 
       - name: 'Setup gcloud'
@@ -138,11 +139,11 @@ jobs:
           WEBHOOK_KEY_NAME: '${WEBHOOK_SECRET_NAME}'
           EOF
 
-          gcloud run deploy "${{ env.DISPATCHER_SERVICE_NAME }}" \
-            --project="${{ env.DISPATCHER_PROJECT_ID }}" \
-            --region="${{ env.DISPATCHER_REGION }}" \
-            --service-account="${{ env.DISPATCHER_SERVICE_ACCOUNT }}" \
-            --image="${{ env.DISPATCHER_DOCKER_REPO }}/${{ env.DISPATCHER_IMAGE_NAME }}:${{ env.DISPATCHER_IMAGE_TAG }}-amd64" \
+          gcloud run deploy "${{ env.INTEGRATION_SERVICE_NAME }}" \
+            --project="${{ env.INTEGRATION_PROJECT_ID }}" \
+            --region="${{ env.INTEGRATION_REGION }}" \
+            --service-account="${{ env.INTEGRATION_SERVICE_ACCOUNT }}" \
+            --image="${{ env.DISPATCHER_DOCKER_REPO }}/${{ env.DISPATCHER_IMAGE_NAME }}:${{ env.DISPATCHER_VERSION }}-amd64" \
             --ingress=internal-and-cloud-load-balancing \
             --no-allow-unauthenticated \
             --set-secrets="${WEBHOOK_SECRET_MOUNT_PATH}/${WEBHOOK_SECRET_NAME}=${WEBHOOK_SECRET_NAME}:${WEBHOOK_SECRET_VERSION}" \
@@ -187,8 +188,8 @@ jobs:
         name: 'Authenticate to Google Cloud'
         uses: 'google-github-actions/auth@a6e2e39c0a0331da29f7fd2c2a20a427e8d3ad1f' # ratchet:google-github-actions/auth@v2
         with:
-          workload_identity_provider: '${{ env.WIF_PROVIDER }}'
-          service_account: '${{ env.WIF_SERVICE_ACCOUNT }}'
+          workload_identity_provider: '${{ env.AUTOPUSH_WIF_PROVIDER }}'
+          service_account: '${{ env.AUTOPUSH_WIF_SERVICE_ACCOUNT }}'
           token_format: 'access_token'
 
       - uses: 'docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772' # ratchet:docker/login-action@v3
@@ -199,18 +200,7 @@ jobs:
 
       - name: 'Retag runner image (${{ matrix.context }})'
         run: |
-          # 1. Define the source and destination tags
-          SOURCE_IMAGE_TAG="${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ matrix.context }}-${{ env.IMAGE_TAG }}"
-          DEST_IMAGE_TAG="${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ matrix.context }}-autopush"
-
-          # 2. Pull the existing image to runner's local Docker daemon
-          echo "Pulling source image: $SOURCE_IMAGE_TAG"
-          docker pull "$SOURCE_IMAGE_TAG"
-
-          # 3. Apply the new tag locally
-          echo "Retagging image: $DEST_IMAGE_TAG"
-          docker tag "$SOURCE_IMAGE_TAG" "$DEST_IMAGE_TAG"
-
-          # 4. Push the image with the new tag to the registry
-          echo "Pushing new tag: $DEST_IMAGE_TAG"
-          docker push "$DEST_IMAGE_TAG"
+          SOURCE_IMAGE="${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ matrix.context }}-${{ env.IMAGE_TAG }}"
+          DEST_IMAGE="${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ matrix.context }}-autopush"
+          echo "Tagging ${SOURCE_IMAGE} as ${DEST_IMAGE}..."
+          gcloud container images add-tag "${SOURCE_IMAGE}" "${DEST_IMAGE}" --quiet
