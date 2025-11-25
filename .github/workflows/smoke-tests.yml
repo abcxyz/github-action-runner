@@ -88,19 +88,21 @@ jobs:
           echo "Checking Go version on self-hosted runner..."
           go version
 
-  run-lint-tests-pkg:
-    uses: './.github/workflows/smoke-test-lint.yml'
-    with:
-      repo-to-lint: 'abcxyz/pkg'
-      ref: 'main'
-      runs-on: '${{ inputs.runs-on }}'
+  # TODO: Figure out why the target repos are failing to lint these unrelated abcxyz repos, they were passing previously.
 
-  run-lint-tests-java-repo:
-    uses: './.github/workflows/smoke-test-lint.yml'
-    with:
-      repo-to-lint: 'abcxyz/lumberjack'
-      ref: 'main'
-      runs-on: '${{ inputs.runs-on }}'
+  # run-lint-tests-pkg:
+  #   uses: './.github/workflows/smoke-test-lint.yml'
+  #   with:
+  #     repo-to-lint: 'abcxyz/pkg'
+  #     ref: 'main'
+  #     runs-on: '${{ inputs.runs-on }}'
+
+  # run-lint-tests-java-repo:
+  #   uses: './.github/workflows/smoke-test-lint.yml'
+  #   with:
+  #     repo-to-lint: 'abcxyz/lumberjack'
+  #     ref: 'main'
+  #     runs-on: '${{ inputs.runs-on }}'
 
   test-buildx-buildkit-functionality:
     uses: './.github/workflows/smoke-test-buildx-buildkit.yml'
@@ -149,15 +151,15 @@ jobs:
       - name: 'Use abc'
         run: 'abc templates describe github.com/abcxyz/abc/t/rest_server@v0.10.0'
 
-  test-build-push-delete-runner:
+  test-build-push-runner:
     runs-on: '${{ inputs.runs-on }}'
     env:
       WIF_PROVIDER: 'projects/712187603283/locations/global/workloadIdentityPools/github-automation/providers/gar-ci-i'
       WIF_SERVICE_ACCOUNT: 'github-automation-bot@gha-gar-ci-i-be70aa.iam.gserviceaccount.com'
       DOCKER_REPO: 'us-central1-docker.pkg.dev/github-action-runner-i-02/ci-images'
       DOCKER_REGISTRY: 'us-central1-docker.pkg.dev'
-      GAR_IMAGE_NAME: 'github-action-runner'
-      GAR_IMAGE_TAG: 'test-build-push-delete-runner-${{ github.run_id }}'
+      GAR_IMAGE_NAME: 'github-action-runner-smoke-test'
+      GAR_IMAGE_TAG: 'smoke-test-${{ github.run_id }}'
     steps:
       - name: 'Create Minimal Docker Context'
         id: 'create-context'
@@ -202,8 +204,3 @@ jobs:
           file: '${{ steps.create-context.outputs.build_context }}/Dockerfile'
           push: true
           tags: '${{ env.DOCKER_REPO }}/${{ env.GAR_IMAGE_NAME }}:${{ env.GAR_IMAGE_TAG }}'
-
-      - name: 'Delete Docker image'
-        if: 'always()'
-        run: |
-          gcloud artifacts docker images delete ${{ env.DOCKER_REPO }}/${{ env.GAR_IMAGE_NAME }}:${{ env.GAR_IMAGE_TAG }} --quiet

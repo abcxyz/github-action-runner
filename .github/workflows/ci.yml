@@ -19,7 +19,7 @@ env:
   IMAGE_NAME: 'github-action-runner'
   IMAGE_TAG: 'ci-${{ github.run_id }}-${{ github.run_number }}'
 
-  DISPATCHER_DOCKER_REPO: 'us-central1-docker.pkg.dev/abcxyz-artifacts/docker-images'
+  DISPATCHER_DOCKER_REPO: 'us-docker.pkg.dev/abcxyz-artifacts/docker-images'
   DISPATCHER_IMAGE_NAME: 'github-action-dispatcher'
   DISPATCHER_VERSION: 'v0.0.0'
 
@@ -90,7 +90,7 @@ jobs:
           push: true
           tags: '${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ matrix.context }}-${{ env.IMAGE_TAG }},${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ github.sha }},${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ matrix.context }}-integration'
 
-  deploy-dispatcher-integration:
+  deploy-dispatcher:
     needs: ['build']
     if: |-
       ${{ github.event_name == 'merge_group' }}
@@ -149,8 +149,8 @@ jobs:
             --set-secrets="${WEBHOOK_SECRET_MOUNT_PATH}/${WEBHOOK_SECRET_NAME}=${WEBHOOK_SECRET_NAME}:${WEBHOOK_SECRET_VERSION}" \
             --env-vars-file=/tmp/env_vars
 
-  smoke-tests-integration:
-    needs: ['deploy-dispatcher-integration']
+  smoke-tests:
+    needs: ['deploy-dispatcher']
     if: |-
       ${{ github.event_name == 'merge_group' }}
     uses: './.github/workflows/smoke-tests.yml'
@@ -160,13 +160,21 @@ jobs:
     with:
       runs-on: 'github-action-runner-integration'
 
-  smoke-tests-passed-integration:
-    needs: ['smoke-tests-integration']
+  smoke-tests-passed:
+    needs: ['deploy-dispatcher', 'smoke-tests']
     if: |-
-      ${{ github.event_name == 'merge_group' }}
+      ${{ always() && github.event_name == 'merge_group' }}
     runs-on: 'ubuntu-latest'
     steps:
-      - run: 'echo \"All runner tests passed in integration\"'
+      - name: 'Check Deployment and Tests Status'
+        if: |-
+          ${{ needs.deploy-dispatcher.result != 'success' || needs.smoke-tests.result != 'success' }}
+        run: |
+          echo "::error::Dispatcher Deployment failed or was skipped. Failing status check to block merge."
+          exit 1
+
+      - name: 'Confirm smoke tests passed'
+        run: 'echo \"All dispatcher tests passed in integration\"'
 
   tag-autopush:
     needs: ['set-matrix', 'build']
