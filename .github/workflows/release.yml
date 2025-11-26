@@ -29,15 +29,30 @@ jobs:
       runner_contexts: '${{ steps.get-contexts.outputs.contexts }}'
     steps:
       - name: 'Checkout'
-        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # ratchet:actions/checkout@v4
+        uses: 'actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5' # ratchet:actions/checkout@v4
 
       - name: 'Get Docker Build Contexts'
         id: 'get-contexts'
         run: |
-          # Find all subdirectories in ./runner, format as JSON array
-          CONTEXTS=$(find runner -mindepth 1 -maxdepth 1 -type d | sed 's|^runner/||' | jq -R . | jq -s -c .)
-          echo "Discovered contexts: $CONTEXTS"
-          echo "contexts=$CONTEXTS" >> "$GITHUB_OUTPUT"
+          # Find all subdirectories in ./runner, create a matrix of context and arch
+          MATRIX="[]"
+          for dir in runner/*/; do
+            if [ -f "${dir}config.json" ]; then
+              context_name=$(basename "$dir")
+              # Read architectures into a bash array
+              mapfile -t arches < <(jq -r '.architectures[]' "${dir}config.json")
+              for arch in "${arches[@]}"; do
+                entry=$(jq -n --arg context "$context_name" --arg arch "$arch" '{context: $context, arch: $arch}')
+                MATRIX=$(echo "$MATRIX" | jq --argjson entry "$entry" '. + [$entry]')
+            done
+          fi
+          done
+          echo "Discovered contexts: $MATRIX"
+          {
+            echo "contexts<<EOF"
+            echo "${MATRIX}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
 
   image-release:
     needs: ['set-matrix']
@@ -49,29 +64,29 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        context: '${{ fromJson(needs.set-matrix.outputs.runner_contexts) }}'
+        include: '${{ fromJson(needs.set-matrix.outputs.runner_contexts) }}'
     steps:
       - name: 'Setup QEMU'
-        uses: 'docker/setup-qemu-action@53851d14592bedcffcf25ea515637cff71ef929a' # ratchet:docker/setup-qemu-action@v3
+        uses: 'docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130' # ratchet:docker/setup-qemu-action@v3
 
       - id: 'auth'
         name: 'Authenticate to Google Cloud'
-        uses: 'google-github-actions/auth@6fc4af4b145ae7821d527454aa9bd537d1f2dc5f' # ratchet:google-github-actions/auth@v2
+        uses: 'google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed' # ratchet:google-github-actions/auth@v2
         with:
           workload_identity_provider: '${{ vars.WIF_PROVIDER }}'
           service_account: '${{ vars.WIF_SERVICE_ACCOUNT }}'
           token_format: 'access_token'
 
       - name: 'Authenticate to Artifact Registry'
-        uses: 'docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567' # ratchet:docker/login-action@v3
+        uses: 'docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef' # ratchet:docker/login-action@v3
         with:
           username: 'oauth2accesstoken'
           password: '${{ steps.auth.outputs.access_token }}'
           registry: 'us-docker.pkg.dev'
 
-      - name: 'Copy images to Release registry'
+      - name: 'Copy images to Release registry (${{ matrix.context }}-${{ matrix.arch }})'
         env:
-          SOURCE_DOCKER_IMAGE: 'us-central1-docker.pkg.dev/github-action-runner-i-02/ci-images/github-action-runner:${{ github.sha }}-${{ matrix.context }}'
-          TARGET_DOCKER_IMAGE: 'us-docker.pkg.dev/abcxyz-artifacts/docker-images/github-action-runner:${{ github.ref_name }}-${{ matrix.context }}'
+          SOURCE_DOCKER_IMAGE: 'us-central1-docker.pkg.dev/github-action-runner-i-02/ci-images/github-action-runner:${{ github.sha }}-${{ matrix.context }}-${{ matrix.arch }}'
+          TARGET_DOCKER_IMAGE: 'us-docker.pkg.dev/abcxyz-artifacts/docker-images/github-action-runner:${{ github.ref_name }}-${{ matrix.context }}-${{ matrix.arch }}'
         run: |-
           gcloud container images add-tag --quiet "${{ env.SOURCE_DOCKER_IMAGE }}" "${{ env.TARGET_DOCKER_IMAGE }}"
