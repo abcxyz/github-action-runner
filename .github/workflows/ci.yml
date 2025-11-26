@@ -19,19 +19,6 @@ env:
   IMAGE_NAME: 'github-action-runner'
   IMAGE_TAG: 'ci-${{ github.run_id }}-${{ github.run_number }}'
 
-  DISPATCHER_DOCKER_REPO: 'us-docker.pkg.dev/abcxyz-artifacts/docker-images'
-  DISPATCHER_IMAGE_NAME: 'github-action-dispatcher'
-  DISPATCHER_VERSION: 'v0.0.0'
-
-  INTEGRATION_RUNNER_LABEL: 'github-action-runner-integration'
-  INTEGRATION_RUNNER_LOCATION: 'us-central1'
-  INTEGRATION_RUNNER_PROJECT_ID: 'abcxyz-gar-runner-i-4f'
-  INTEGRATION_RUNNER_SERVICE_ACCOUNT: 'projects/abcxyz-gar-runner-i-4f/serviceAccounts/abcxyz-gar-runner-sa@abcxyz-gar-runner-i-4f.iam.gserviceaccount.com'
-
-  INTEGRATION_PROJECT_ID: 'github-action-runner-i-02'
-  INTEGRATION_REGION: 'us-central1'
-  INTEGRATION_SERVICE_ACCOUNT: 'gad-webhook-sa@github-action-runner-i-02.iam.gserviceaccount.com'
-  INTEGRATION_SERVICE_NAME: 'github-action-dispatcher-23db'
   INTEGRATION_WIF_PROVIDER: 'projects/712187603283/locations/global/workloadIdentityPools/github-automation/providers/gar-ci-i'
   INTEGRATION_WIF_SERVICE_ACCOUNT: 'github-automation-bot@gha-gar-ci-i-be70aa.iam.gserviceaccount.com'
 
@@ -50,10 +37,25 @@ jobs:
       - name: 'Get Docker Build Contexts'
         id: 'get-contexts'
         run: |
-          # Find all subdirectories in ./runner, format as JSON array
-          CONTEXTS=$(find runner -mindepth 1 -maxdepth 1 -type d | sed 's|^runner/||' | jq -R . | jq -s -c .)
-          echo "Discovered contexts: $CONTEXTS"
-          echo "contexts=$CONTEXTS" >> "$GITHUB_OUTPUT"
+          # Find all subdirectories in ./runner, create a matrix of context and arch
+          MATRIX="[]"
+          for dir in runner/*/; do
+            if [ -f "${dir}config.json" ]; then
+              context_name=$(basename "$dir")
+              # Read architectures into a bash array
+              mapfile -t arches < <(jq -r '.architectures[]' "${dir}config.json")
+              for arch in "${arches[@]}"; do
+                entry=$(jq -n --arg context "$context_name" --arg arch "$arch" '{context: $context, arch: $arch}')
+                MATRIX=$(echo "$MATRIX" | jq --argjson entry "$entry" '. + [$entry]')
+              done
+            fi
+          done
+          echo "Discovered contexts: $MATRIX"
+          {
+            echo "contexts<<EOF"
+            echo "${MATRIX}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
 
   build:
     needs: ['set-matrix']
@@ -64,7 +66,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        context: '${{ fromJson(needs.set-matrix.outputs.runner_contexts) }}'
+        include: '${{ fromJson(needs.set-matrix.outputs.runner_contexts) }}'
     steps:
       - name: 'Checkout'
         uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # ratchet:actions/checkout@v4
@@ -77,7 +79,13 @@ jobs:
           service_account: '${{ env.INTEGRATION_WIF_SERVICE_ACCOUNT }}'
           token_format: 'access_token'
 
-      - uses: 'docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772' # ratchet:docker/login-action@v3
+      - name: 'Set up QEMU'
+        uses: 'docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130' # ratchet:docker/setup-qemu-action@v3
+
+      - name: 'Set up Docker Buildx'
+        uses: 'docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435' # ratchet:docker/setup-buildx-action@v3
+
+      - uses: 'docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef' # ratchet:docker/login-action@v3
         with:
           username: 'oauth2accesstoken'
           password: '${{ steps.auth.outputs.access_token }}'
@@ -87,70 +95,15 @@ jobs:
         uses: 'docker/build-push-action@5176d81f87c23d6fc96624dfdbcd9f3830bbe445' # ratchet:docker/build-push-action@v6.5.0
         with:
           context: './runner/${{ matrix.context }}'
+          platforms: 'linux/${{ matrix.arch }}'
           push: true
-          tags: '${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}-${{ matrix.context }},${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ github.sha }}-${{ matrix.context }},${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:integration-${{ matrix.context }}'
-
-  deploy-dispatcher:
-    needs: ['build']
-    if: |-
-      ${{ github.event_name == 'merge_group' }}
-    runs-on: 'ubuntu-latest'
-    permissions:
-      contents: 'read'
-      id-token: 'write'
-    env:
-      GITHUB_APP_ID: '2274453'
-      KMS_APP_PRIVATE_KEY_ID: 'projects/github-action-runner-i-02/locations/us-central1/keyRings/gad-ea-key-ring/cryptoKeys/gad-ea-pk/cryptoKeyVersions/1'
-    steps:
-      - name: 'Checkout'
-        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # ratchet:actions/checkout@v4
-
-      - id: 'auth'
-        name: 'Authenticate to Google Cloud'
-        uses: 'google-github-actions/auth@a6e2e39c0a0331da29f7fd2c2a20a427e8d3ad1f' # ratchet:google-github-actions/auth@v2
-        with:
-          workload_identity_provider: '${{ env.INTEGRATION_WIF_PROVIDER }}'
-          service_account: '${{ env.INTEGRATION_WIF_SERVICE_ACCOUNT }}'
-          token_format: 'access_token'
-
-      - name: 'Setup gcloud'
-        uses: 'google-github-actions/setup-gcloud@6189d56e4096ee891640bb02ac264be376592d6a' # ratchet:google-github-actions/setup-gcloud@v2
-        with:
-          version: '529.0.0'
-
-      - name: 'Deploy to Cloud Run'
-        id: 'deploy'
-        run: |-
-          WEBHOOK_SECRET_MOUNT_PATH="/etc/secrets/webhook/key"
-          WEBHOOK_SECRET_NAME="webhook-key"
-          WEBHOOK_SECRET_VERSION="latest"
-
-          cat > /tmp/env_vars <<EOF
-          GITHUB_APP_ID: '${{ env.GITHUB_APP_ID }}'
-          KMS_APP_PRIVATE_KEY_ID: '${{ env.KMS_APP_PRIVATE_KEY_ID }}'
-          RUNNER_IMAGE_NAME: '${{ env.IMAGE_NAME }}'
-          RUNNER_IMAGE_TAG: '${{ env.IMAGE_TAG }}-ubuntu-24-04'
-          RUNNER_LABEL: '${{ env.INTEGRATION_RUNNER_LABEL }}'
-          RUNNER_LOCATION: '${{ env.INTEGRATION_RUNNER_LOCATION }}'
-          RUNNER_PROJECT_ID: '${{ env.INTEGRATION_RUNNER_PROJECT_ID }}'
-          RUNNER_REPOSITORY_ID: '${{ env.DOCKER_REPO }}'
-          RUNNER_SERVICE_ACCOUNT: '${{ env.INTEGRATION_RUNNER_SERVICE_ACCOUNT }}'
-          WEBHOOK_KEY_MOUNT_PATH: '${WEBHOOK_SECRET_MOUNT_PATH}'
-          WEBHOOK_KEY_NAME: '${WEBHOOK_SECRET_NAME}'
-          EOF
-
-          gcloud run deploy "${{ env.INTEGRATION_SERVICE_NAME }}" \
-            --project="${{ env.INTEGRATION_PROJECT_ID }}" \
-            --region="${{ env.INTEGRATION_REGION }}" \
-            --service-account="${{ env.INTEGRATION_SERVICE_ACCOUNT }}" \
-            --image="${{ env.DISPATCHER_DOCKER_REPO }}/${{ env.DISPATCHER_IMAGE_NAME }}:${{ env.DISPATCHER_VERSION }}-amd64" \
-            --ingress=internal-and-cloud-load-balancing \
-            --no-allow-unauthenticated \
-            --set-secrets="${WEBHOOK_SECRET_MOUNT_PATH}/${WEBHOOK_SECRET_NAME}=${WEBHOOK_SECRET_NAME}:${WEBHOOK_SECRET_VERSION}" \
-            --env-vars-file=/tmp/env_vars
+          tags: |
+            ${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}-${{ matrix.context }}-${{ matrix.arch }}
+            ${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ github.sha }}-${{ matrix.context }}-${{ matrix.arch }}
+            ${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:integration-${{ matrix.context }}-${{ matrix.arch }}
 
   smoke-tests:
-    needs: ['deploy-dispatcher']
+    needs: ['build', 'set-matrix']
     if: |-
       ${{ github.event_name == 'merge_group' }}
     uses: './.github/workflows/smoke-tests.yml'
@@ -159,16 +112,17 @@ jobs:
       id-token: 'write'
     with:
       runs-on: 'github-action-runner-integration'
+      runner_contexts: '${{ needs.set-matrix.outputs.runner_contexts }}'
 
   smoke-tests-passed:
-    needs: ['deploy-dispatcher', 'smoke-tests']
+    needs: ['smoke-tests']
     if: |-
       ${{ always() && github.event_name == 'merge_group' }}
     runs-on: 'ubuntu-latest'
     steps:
       - name: 'Check Deployment and Tests Status'
         if: |-
-          ${{ needs.deploy-dispatcher.result != 'success' || needs.smoke-tests.result != 'success' }}
+          ${{ needs.smoke-tests.result != 'success' }}
         run: |
           echo "::error::Dispatcher Deployment failed or was skipped. Failing status check to block merge."
           exit 1
@@ -187,7 +141,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        context: '${{ fromJson(needs.set-matrix.outputs.runner_contexts) }}'
+        include: '${{ fromJson(needs.set-matrix.outputs.runner_contexts) }}'
     steps:
       - name: 'Checkout'
         uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # ratchet:actions/checkout@v4
@@ -208,8 +162,8 @@ jobs:
 
       - name: 'Retag runner image (${{ matrix.context }})'
         env:
-          SOURCE_IMAGE: '${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}-${{ matrix.context }}'
-          DEST_IMAGE: '${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:autopush-${{ matrix.context }}'
+          SOURCE_IMAGE: '${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}-${{ matrix.context }}-${{ matrix.arch }}'
+          DEST_IMAGE: '${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:autopush-${{ matrix.context }}-${{ matrix.arch }}'
         run: |
           echo "Tagging ${{ env.SOURCE_IMAGE }} as ${{ env.DEST_IMAGE }}..."
           gcloud container images add-tag "${{ env.SOURCE_IMAGE }}" "${{ env.DEST_IMAGE }}" --quiet

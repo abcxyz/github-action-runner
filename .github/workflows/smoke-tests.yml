@@ -20,10 +20,98 @@ on:
       runs-on:
         description: 'The runner environment to use for jobs.'
         type: 'string'
+      runner_contexts:
+        description: 'The matrix of runner contexts.'
+        required: true
+        type: 'string'
+
+env:
+  DOCKER_REGISTRY: 'us-central1-docker.pkg.dev'
+  DOCKER_REPO: 'us-central1-docker.pkg.dev/github-action-runner-i-02/ci-images'
+  IMAGE_NAME: 'github-action-runner'
+  IMAGE_TAG: 'ci-${{ github.run_id }}-${{ github.run_number }}'
+
+  DISPATCHER_DOCKER_REPO: 'us-docker.pkg.dev/abcxyz-artifacts/docker-images'
+  DISPATCHER_IMAGE_NAME: 'github-action-dispatcher'
+  DISPATCHER_VERSION: 'v0.0.0'
+
+  INTEGRATION_RUNNER_LABEL: 'github-action-runner-integration'
+  INTEGRATION_RUNNER_LOCATION: 'us-central1'
+  INTEGRATION_RUNNER_PROJECT_ID: 'abcxyz-gar-runner-i-4f'
+  INTEGRATION_RUNNER_SERVICE_ACCOUNT: 'projects/abcxyz-gar-runner-i-4f/serviceAccounts/abcxyz-gar-runner-sa@abcxyz-gar-runner-i-4f.iam.gserviceaccount.com'
+
+  INTEGRATION_PROJECT_ID: 'github-action-runner-i-02'
+  INTEGRATION_REGION: 'us-central1'
+  INTEGRATION_SERVICE_ACCOUNT: 'gad-webhook-sa@github-action-runner-i-02.iam.gserviceaccount.com'
+  INTEGRATION_SERVICE_NAME: 'github-action-dispatcher-23db'
+  INTEGRATION_WIF_PROVIDER: 'projects/712187603283/locations/global/workloadIdentityPools/github-automation/providers/gar-ci-i'
+  INTEGRATION_WIF_SERVICE_ACCOUNT: 'github-automation-bot@gha-gar-ci-i-be70aa.iam.gserviceaccount.com'
 
 jobs:
+  deploy-dispatcher:
+    runs-on: 'ubuntu-latest'
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+    strategy:
+      fail-fast: false
+      matrix:
+        include: '${{ fromJson(inputs.runner_contexts) }}'
+      max-parallel: 1
+    env:
+      GITHUB_APP_ID: '2274453'
+      KMS_APP_PRIVATE_KEY_ID: 'projects/github-action-runner-i-02/locations/us-central1/keyRings/gad-ea-key-ring/cryptoKeys/gad-ea-pk/cryptoKeyVersions/1'
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # ratchet:actions/checkout@v4
+
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@a6e2e39c0a0331da29f7fd2c2a20a427e8d3ad1f' # ratchet:google-github-actions/auth@v2
+        with:
+          workload_identity_provider: '${{ env.INTEGRATION_WIF_PROVIDER }}'
+          service_account: '${{ env.INTEGRATION_WIF_SERVICE_ACCOUNT }}'
+          token_format: 'access_token'
+
+      - name: 'Setup gcloud'
+        uses: 'google-github-actions/setup-gcloud@6189d56e4096ee891640bb02ac264be376592d6a' # ratchet:google-github-actions/setup-gcloud@v2
+        with:
+          version: '529.0.0'
+
+      - name: 'Deploy to Cloud Run'
+        id: 'deploy'
+        run: |-
+          WEBHOOK_SECRET_MOUNT_PATH="/etc/secrets/webhook/key"
+          WEBHOOK_SECRET_NAME="webhook-key"
+          WEBHOOK_SECRET_VERSION="latest"
+
+          cat > /tmp/env_vars <<EOF
+          GITHUB_APP_ID: '${{ env.GITHUB_APP_ID }}'
+          KMS_APP_PRIVATE_KEY_ID: '${{ env.KMS_APP_PRIVATE_KEY_ID }}'
+          RUNNER_IMAGE_NAME: '${{ env.IMAGE_NAME }}'
+          RUNNER_IMAGE_TAG: '${{ env.IMAGE_TAG }}-${{ matrix.context }}-${{ matrix.arch }}'
+          RUNNER_LABEL: '${{ env.INTEGRATION_RUNNER_LABEL }}'
+          RUNNER_LOCATION: '${{ env.INTEGRATION_RUNNER_LOCATION }}'
+          RUNNER_PROJECT_ID: '${{ env.INTEGRATION_RUNNER_PROJECT_ID }}'
+          RUNNER_REPOSITORY_ID: '${{ env.DOCKER_REPO }}'
+          RUNNER_SERVICE_ACCOUNT: '${{ env.INTEGRATION_RUNNER_SERVICE_ACCOUNT }}'
+          WEBHOOK_KEY_MOUNT_PATH: '${WEBHOOK_SECRET_MOUNT_PATH}'
+          WEBHOOK_KEY_NAME: '${WEBHOOK_SECRET_NAME}'
+          EOF
+
+          gcloud run deploy "${{ env.INTEGRATION_SERVICE_NAME }}" \
+            --project="${{ env.INTEGRATION_PROJECT_ID }}" \
+            --region="${{ env.INTEGRATION_REGION }}" \
+            --service-account="${{ env.INTEGRATION_SERVICE_ACCOUNT }}" \
+            --image="${{ env.DISPATCHER_DOCKER_REPO }}/${{ env.DISPATCHER_IMAGE_NAME }}:${{ env.DISPATCHER_VERSION }}-${{ matrix.arch }}" \
+            --ingress=internal-and-cloud-load-balancing \
+            --no-allow-unauthenticated \
+            --set-secrets="${WEBHOOK_SECRET_MOUNT_PATH}/${WEBHOOK_SECRET_NAME}=${WEBHOOK_SECRET_NAME}:${WEBHOOK_SECRET_VERSION}" \
+            --env-vars-file=/tmp/env_vars
+
   test-github-script-action:
     runs-on: '${{ inputs.runs-on }}'
+    needs: ['deploy-dispatcher']
     steps:
       - name: 'Hello world script'
         uses: 'actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea' # ratchet:actions/github-script@v7
@@ -33,6 +121,7 @@ jobs:
 
   test-js-action:
     runs-on: '${{ inputs.runs-on }}'
+    needs: ['deploy-dispatcher']
     steps:
       - name: 'Run action'
         uses: 'actions/hello-world-javascript-action@ad41a6c27317e688719c813b0d6a25685a9bce54' # ratchet:actions/hello-world-javascript-action@v1.1
@@ -42,6 +131,7 @@ jobs:
   # This test is to check Docker-in-Docker volume mounting. It's possible that the docker run command will succeed but not properly mount the files and workflows subsequently fail.
   check-docker-volume-mount:
     runs-on: '${{ inputs.runs-on }}'
+    needs: ['deploy-dispatcher']
     steps:
       - name: 'Checkout Repository'
         uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # ratchet:actions/checkout@v4
@@ -77,6 +167,7 @@ jobs:
 
   test-go-version:
     runs-on: '${{ inputs.runs-on }}'
+    needs: ['deploy-dispatcher']
     steps:
       - name: 'Setup Go'
         uses: 'actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b' # ratchet:actions/setup-go@v5
@@ -105,14 +196,15 @@ jobs:
   #     runs-on: '${{ inputs.runs-on }}'
 
   test-buildx-buildkit-functionality:
+    needs: ['deploy-dispatcher']
     uses: './.github/workflows/smoke-test-buildx-buildkit.yml'
     with:
       runs-on: '${{ inputs.runs-on }}'
 
   test-create-pull-request-minty:
-    # WIF attribute means will only pass if running on main.
     if: |-
       ${{ github.ref == 'refs/heads/main' }}
+    needs: ['deploy-dispatcher']
     uses: './.github/workflows/smoke-test-minty.yml'
     permissions:
       contents: 'read'
@@ -121,11 +213,13 @@ jobs:
       runs-on: '${{ inputs.runs-on }}'
 
   test-github-functionality:
+    needs: ['deploy-dispatcher']
     uses: './.github/workflows/smoke-test-gh.yaml'
     with:
       runs-on: '${{ inputs.runs-on }}'
 
   test-gcp-functionality:
+    needs: ['deploy-dispatcher']
     uses: './.github/workflows/smoke-test-gcp.yml'
     permissions:
       id-token: 'write'
@@ -133,12 +227,14 @@ jobs:
       runs-on: '${{ inputs.runs-on }}'
 
   test-setup-actions:
+    needs: ['deploy-dispatcher']
     uses: './.github/workflows/smoke-test-setup.yml'
     with:
       runs-on: '${{ inputs.runs-on }}'
 
   test-setup-binary:
     runs-on: '${{ inputs.runs-on }}'
+    needs: ['deploy-dispatcher']
     steps:
       - name: 'Setup abc'
         uses: 'abcxyz/actions/.github/actions/setup-binary@f26869a425d0b0217b9c8ad7e3f6ab70547272c9' # ratchet:main
@@ -153,6 +249,7 @@ jobs:
 
   test-build-push-runner:
     runs-on: '${{ inputs.runs-on }}'
+    needs: ['deploy-dispatcher']
     env:
       WIF_PROVIDER: 'projects/712187603283/locations/global/workloadIdentityPools/github-automation/providers/gar-ci-i'
       WIF_SERVICE_ACCOUNT: 'github-automation-bot@gha-gar-ci-i-be70aa.iam.gserviceaccount.com'
