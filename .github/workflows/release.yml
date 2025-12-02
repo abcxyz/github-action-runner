@@ -88,5 +88,7 @@ jobs:
         env:
           SOURCE_DOCKER_IMAGE: 'us-central1-docker.pkg.dev/github-action-runner-i-02/ci-images/github-action-runner:${{ github.sha }}-${{ matrix.context }}-${{ matrix.arch }}'
           TARGET_DOCKER_IMAGE: 'us-docker.pkg.dev/abcxyz-artifacts/docker-images/github-action-runner:${{ github.ref_name }}-${{ matrix.context }}-${{ matrix.arch }}'
-        run: |-
-          gcloud container images add-tag --quiet "${{ env.SOURCE_DOCKER_IMAGE }}" "${{ env.TARGET_DOCKER_IMAGE }}"
+        run: |
+          docker pull "${{ env.SOURCE_DOCKER_IMAGE }}"
+          docker tag "${{ env.SOURCE_DOCKER_IMAGE }}" "${{ env.TARGET_DOCKER_IMAGE }}"
+          docker push "${{ env.TARGET_DOCKER_IMAGE }}"
