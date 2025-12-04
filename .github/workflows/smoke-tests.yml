@@ -338,4 +338,10 @@ jobs:
       - name: 'Test runs on custom container'
         shell: 'bash'
         run: |
-          echo "hit"
+          UNIQUE_FILE_IN_CONTAINER="/smoke-test-container-test/index.txt"
+          if [ ! -f "${UNIQUE_FILE_IN_CONTAINER}" ]; then
+            echo "File not found: ${UNIQUE_FILE_IN_CONTAINER}"
+            exit 1
+          else 
+            echo "Found file: ${UNIQUE_FILE_IN_CONTAINER}"
+          fi
