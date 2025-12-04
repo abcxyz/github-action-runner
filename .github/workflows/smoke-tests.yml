@@ -301,3 +301,47 @@ jobs:
           file: '${{ steps.create-context.outputs.build_context }}/Dockerfile'
           push: true
           tags: '${{ env.DOCKER_REPO }}/${{ env.GAR_IMAGE_NAME }}:${{ env.GAR_IMAGE_TAG }}'
+
+  maybe-create-smoke-test-image:
+    needs: ['deploy-dispatcher']
+    uses: 'abcxyz/actions/.github/workflows/maybe-build-docker.yml@f26869a425d0b0217b9c8ad7e3f6ab70547272c9' # ratchet:main
+    permissions:
+      contents: 'read'
+      packages: 'write'
+    with:
+      runs_on: '"${{ inputs.runs-on }}"'
+      dockerfile: '.github/workflows/smoke-test-container-test.dockerfile'
+      github_image_name: 'ghcr.io/${{ github.repository }}/smoke-test-container-test'
+
+  # Note, normally this job fails in the initialize containers step with the
+  # following error message:
+  #
+  # "Error: Container feature is not supported when runner is already running inside container."
+  # https://github.com/actions/runner/blob/463496e4fb25773f9409c94ba8209f061a0aa612/src/Runner.Worker/ContainerOperationProvider.cs#L539-L557
+  #
+  # We implement a hacky workaround for this that makes this pass.
+  test-container-feature:
+    runs-on: '${{ inputs.runs-on }}'
+    needs: ['maybe-create-smoke-test-image']
+    permissions:
+      contents: 'read'
+      packages: 'read'
+    container:
+      image: 'ghcr.io/${{ github.repository }}/smoke-test-container-test:${{ needs.maybe-create-smoke-test-image.outputs.docker_tag }}'
+      credentials:
+        username: '${{ github.actor }}'
+        password: '${{ secrets.GITHUB_TOKEN }}'
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # ratchet:actions/checkout@v4
+
+      - name: 'Test runs on custom container'
+        shell: 'bash'
+        run: |
+          UNIQUE_FILE_IN_CONTAINER="/smoke-test-container-test/index.txt"
+          if [ ! -f "${UNIQUE_FILE_IN_CONTAINER}" ]; then
+            echo "File not found: ${UNIQUE_FILE_IN_CONTAINER}"
+            exit 1
+          else
+            echo "Found file: ${UNIQUE_FILE_IN_CONTAINER}"
+          fi

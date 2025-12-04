@@ -10,7 +10,7 @@ LOCK_FILE="/tmp/runner.lock"
 
 # Start the runner in the background.
 # The DOCKER_HOST variable is inherited from the parent process.
-/actions-runner/run.sh --jitconfig "${ENCODED_JIT_CONFIG}" &
+/workspace/run.sh --jitconfig "${ENCODED_JIT_CONFIG}" &
 RUNNER_PID=$!
 
 echo "Runner started with PID ${RUNNER_PID}. Idle timeout is ${IDLE_TIMEOUT_SECONDS} seconds."

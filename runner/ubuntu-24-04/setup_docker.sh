@@ -29,6 +29,29 @@ export DOCKER_HOST="${INTERNAL_DOCKER_SOCKET}"
 # Forcing --storage-driver=vfs is crucial for reliability in Cloud Build
 dockerd-entrypoint.sh dockerd --host="${INTERNAL_DOCKER_SOCKET}" --storage-driver=vfs &
 
+##########################################################################
+# BEGIN - github actions container feature workaround
+##########################################################################
+# Normally, GitHub Actions Self Hosted does not support using the `container`
+# workflow feature. See the following bug:
+# https://github.com/actions/runner/blob/463496e4fb25773f9409c94ba8209f061a0aa612/src/Runner.Worker/ContainerOperationProvider.cs#L539-L557
+# 
+# We workaround this bug by utilizing the pre-mounted cloud build `/workspace`
+# directory. This allows us to utilize a path that is the same on the host VM
+# and current docker container filesystem.
+cp -r /actions-runner/* /workspace
+chown -R runner:docker /workspace
+
+# In order to trick the GitHub Actions Runner binary into thinking that we are
+# not already in a docker container we must create a fake cgroup file and then
+# bind mount the fake file over the real one.
+echo '0::/' > /tmp/cgroup_mask
+mount --bind /tmp/cgroup_mask /proc/1/cgroup
+
+##########################################################################
+# END - github actions container feature workaround
+##########################################################################
+
 # Drop privileges and execute the runner startup script
 # The DOCKER_HOST variable will be passed to the runner's environment
-exec gosu runner /actions-runner/start_runner.sh "$@"
+exec gosu runner /workspace/start_runner.sh "$@"
