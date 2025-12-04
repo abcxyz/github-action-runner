@@ -303,6 +303,7 @@ jobs:
           tags: '${{ env.DOCKER_REPO }}/${{ env.GAR_IMAGE_NAME }}:${{ env.GAR_IMAGE_TAG }}'
 
   maybe-create-smoke-test-image:
+    needs: ['deploy-dispatcher']
     uses: 'abcxyz/actions/.github/workflows/maybe-build-docker.yml@f26869a425d0b0217b9c8ad7e3f6ab70547272c9' # ratchet:main
     permissions:
       contents: 'read'

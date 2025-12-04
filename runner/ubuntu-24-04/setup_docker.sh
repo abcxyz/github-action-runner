@@ -29,6 +29,8 @@ export DOCKER_HOST="${INTERNAL_DOCKER_SOCKET}"
 # Forcing --storage-driver=vfs is crucial for reliability in Cloud Build
 dockerd-entrypoint.sh dockerd --host="${INTERNAL_DOCKER_SOCKET}" --storage-driver=vfs &
 
+cp -r /actions-runner /workspace
+
 # Drop privileges and execute the runner startup script
 # The DOCKER_HOST variable will be passed to the runner's environment
 exec gosu runner /workspace/start_runner.sh "$@"
