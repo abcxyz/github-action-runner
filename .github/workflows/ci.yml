@@ -110,6 +110,7 @@ jobs:
     permissions:
       contents: 'read'
       id-token: 'write'
+      packages: 'write'
     with:
       runs-on: 'github-action-runner-integration'
       runner_contexts: '${{ needs.set-matrix.outputs.runner_contexts }}'

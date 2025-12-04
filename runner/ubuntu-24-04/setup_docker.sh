@@ -31,4 +31,4 @@ dockerd-entrypoint.sh dockerd --host="${INTERNAL_DOCKER_SOCKET}" --storage-drive
 
 # Drop privileges and execute the runner startup script
 # The DOCKER_HOST variable will be passed to the runner's environment
-exec gosu runner /actions-runner/start_runner.sh "$@"
+exec gosu runner /workspace/start_runner.sh "$@"

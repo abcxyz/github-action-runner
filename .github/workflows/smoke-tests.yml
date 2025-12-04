@@ -257,9 +257,6 @@ jobs:
       DOCKER_REGISTRY: 'us-central1-docker.pkg.dev'
       GAR_IMAGE_NAME: 'github-action-runner-smoke-test'
       GAR_IMAGE_TAG: 'smoke-test-${{ github.run_id }}'
-    outputs:
-      gar_token: '${{ steps.auth.outputs.access_token }}'
-      container: '${{ env.DOCKER_REPO }}/${{ env.GAR_IMAGE_NAME }}:${{ env.GAR_IMAGE_TAG }}'
     steps:
       - name: 'Create Minimal Docker Context'
         id: 'create-context'
@@ -305,19 +302,31 @@ jobs:
           push: true
           tags: '${{ env.DOCKER_REPO }}/${{ env.GAR_IMAGE_NAME }}:${{ env.GAR_IMAGE_TAG }}'
 
+  maybe-create-smoke-test-image:
+    uses: 'abcxyz/actions/.github/workflows/maybe-build-docker.yml@f26869a425d0b0217b9c8ad7e3f6ab70547272c9' # ratchet:main
+    permissions:
+      contents: 'read'
+      packages: 'write'
+    with:
+      dockerfile: '.github/workflows/smoke-test-container-test.dockerfile'
+      github_image_name: 'ghcr.io/${{ github.repository }}/smoke-test-container-test'
+
   test-container-feature:
     runs-on: '${{ inputs.runs-on }}'
-    needs: ['test-build-push-runner']
+    needs: ['maybe-create-smoke-test-image']
+    permissions:
+      contents: 'read'
+      packages: 'read'
     container:
-      image: '${{ needs.test-build-push-runner.outputs.container }}'
+      image: 'ghcr.io/${{ github.repository }}/smoke-test-container-test:${{ needs.maybe-create-smoke-test-image.outputs.docker_tag }}'
       credentials:
-        username: 'oauth2accesstoken'
-        password: '${{ needs.test-build-push-runner.outputs.gar_token }}'
+        username: '${{ github.actor }}'
+        password: '${{ secrets.GITHUB_TOKEN }}'
     steps:
       - name: 'Checkout'
         uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # ratchet:actions/checkout@v4
 
-      - name: 'Check installs'
+      - name: 'Test runs on custom container'
         shell: 'bash'
         run: |
           echo "hit"
