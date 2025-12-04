@@ -32,14 +32,14 @@ dockerd-entrypoint.sh dockerd --host="${INTERNAL_DOCKER_SOCKET}" --storage-drive
 cp -r /actions-runner/* /workspace
 chown -R runner:docker /workspace
 
-echo ""
-echo "dir /actions-runner"
-ls /actions-runner -al
-
-echo ""
-echo "dir /workspace"
-ls /workspace -al
+# Create a fake cgroup file
+echo '0::/' > /tmp/cgroup_mask
+# Bind mount the fake file over the real one.
+mount --bind /tmp/cgroup_mask /proc/1/cgroup
 
 # Drop privileges and execute the runner startup script
 # The DOCKER_HOST variable will be passed to the runner's environment
 exec gosu runner /workspace/start_runner.sh "$@"
+
+# Run the binary in a new namespace with the masked file
+# unshare -m /bin/bash -c "mount --bind /tmp/cgroup_mask /proc/1/cgroup && exec gosu runner /workspace/start_runner.sh "$@""
