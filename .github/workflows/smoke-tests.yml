@@ -342,6 +342,6 @@ jobs:
           if [ ! -f "${UNIQUE_FILE_IN_CONTAINER}" ]; then
             echo "File not found: ${UNIQUE_FILE_IN_CONTAINER}"
             exit 1
-          else 
+          else
             echo "Found file: ${UNIQUE_FILE_IN_CONTAINER}"
           fi
