@@ -313,6 +313,13 @@ jobs:
       dockerfile: '.github/workflows/smoke-test-container-test.dockerfile'
       github_image_name: 'ghcr.io/${{ github.repository }}/smoke-test-container-test'
 
+  # Note, normally this job fails in the initialize containers step with the
+  # following error message:
+  #
+  # "Error: Container feature is not supported when runner is already running inside container."
+  # https://github.com/actions/runner/blob/463496e4fb25773f9409c94ba8209f061a0aa612/src/Runner.Worker/ContainerOperationProvider.cs#L539-L557
+  #
+  # We implement a hacky workaround for this that makes this pass.
   test-container-feature:
     runs-on: '${{ inputs.runs-on }}'
     needs: ['maybe-create-smoke-test-image']
@@ -332,5 +339,3 @@ jobs:
         shell: 'bash'
         run: |
           echo "hit"
-          # TODO: Remove after confirming it works ok
-          exit 1
