@@ -29,7 +29,7 @@ export DOCKER_HOST="${INTERNAL_DOCKER_SOCKET}"
 # Forcing --storage-driver=vfs is crucial for reliability in Cloud Build
 dockerd-entrypoint.sh dockerd --host="${INTERNAL_DOCKER_SOCKET}" --storage-driver=vfs &
 
-cp -r /actions-runner /workspace
+cp -r /actions-runner/* /workspace
 
 echo ""
 echo "dir /actions-runner"
