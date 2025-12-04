@@ -30,6 +30,7 @@ export DOCKER_HOST="${INTERNAL_DOCKER_SOCKET}"
 dockerd-entrypoint.sh dockerd --host="${INTERNAL_DOCKER_SOCKET}" --storage-driver=vfs &
 
 cp -r /actions-runner/* /workspace
+chown -R runner:docker /workspace
 
 echo ""
 echo "dir /actions-runner"
