@@ -308,6 +308,7 @@ jobs:
       contents: 'read'
       packages: 'write'
     with:
+      runs_on: '"${{ inputs.runs-on }}"'
       dockerfile: '.github/workflows/smoke-test-container-test.dockerfile'
       github_image_name: 'ghcr.io/${{ github.repository }}/smoke-test-container-test'
 
