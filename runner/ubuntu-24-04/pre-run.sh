@@ -7,7 +7,7 @@ GITHUB_ENV="${GITHUB_ENV:?}"
 GITHUB_EVENT_PATH="${GITHUB_EVENT_PATH:?}"
 
 # log to a file to that gets dumped to stdout in cloud build logs.
-PRERUN_LOG_FILE="/workspace/pre-run.log"
+PRERUN_LOG_FILE="/tmp/pre-run.log"
 touch "${PRERUN_LOG_FILE}"
 
 LOCK_FILE="/tmp/runner.lock"
