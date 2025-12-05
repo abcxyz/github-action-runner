@@ -424,7 +424,7 @@ jobs:
   # https://github.com/actions/runner/blob/463496e4fb25773f9409c94ba8209f061a0aa612/src/Runner.Worker/ContainerOperationProvider.cs#L539-L557
   #
   # We implement a hacky workaround for this that makes this pass.
-  test-container-feature:
+  test-container-feature-using-gh-packages:
     runs-on: '${{ inputs.runs-on }}'
     needs: ['maybe-create-smoke-test-image']
     permissions:
@@ -451,7 +451,7 @@ jobs:
           fi
           exit 1
 
-  test-container-feature:
+  test-container-feature-using-gar:
     runs-on: '${{ inputs.runs-on }}'
     needs: ['maybe-create-smoke-test-image']
     permissions:
