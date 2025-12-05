@@ -42,14 +42,14 @@ if [[ -f "${LOCK_FILE}" ]]; then
   echo "Removing lockfile: ${LOCK_FILE}"
   rm -f "${LOCK_FILE}"
 else
-  echo "No lockfile to cleanup."
+  echo "No lockfile to cleanup: ${LOCK_FILE}"
 fi
 
 if [[ -f "${PRERUN_LOG_FILE}" ]]; then
   echo "Logs from pre-run.sh script: ${PRERUN_LOG_FILE}"
   cat "${PRERUN_LOG_FILE}"
 else
-  echo "Unable to find logs for pre-run.sh script"
+  echo "Unable to find logs for pre-run.sh script: ${PRERUN_LOG_FILE}"
 fi
 
 # Exit with a success code if the runner was terminated by the idle timeout.
