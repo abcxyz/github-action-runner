@@ -7,7 +7,7 @@ ENCODED_JIT_CONFIG="$(echo "${ENCODED_JIT_CONFIG}" | base64 -d | gunzip)"
 
 IDLE_TIMEOUT_SECONDS="${IDLE_TIMEOUT_SECONDS:-300}" # Default to 5 minutes
 LOCK_FILE="/tmp/runner.lock"
-PRERUN_LOG_FILE="/tmp/pre-run.log"
+PRERUN_LOG_FILE="${HOME}/pre-run.log"
 
 # Start the runner in the background.
 # The DOCKER_HOST variable is inherited from the parent process.

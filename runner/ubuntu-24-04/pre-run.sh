@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # log to a file to that gets dumped to stdout in cloud build logs.
-PRERUN_LOG_FILE="/tmp/pre-run.log"
+PRERUN_LOG_FILE="${HOME}/pre-run.log"
 touch "${PRERUN_LOG_FILE}"
 
 LOCK_FILE="/tmp/runner.lock"
