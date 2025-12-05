@@ -449,5 +449,3 @@ jobs:
           else
             echo "Found file: ${UNIQUE_FILE_IN_CONTAINER}"
           fi
-          printenv
-          exit 1
