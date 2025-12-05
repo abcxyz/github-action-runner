@@ -449,3 +449,33 @@ jobs:
           else
             echo "Found file: ${UNIQUE_FILE_IN_CONTAINER}"
           fi
+          exit 1
+
+  test-container-feature:
+    runs-on: '${{ inputs.runs-on }}'
+    needs: ['maybe-create-smoke-test-image']
+    permissions:
+      contents: 'read'
+      packages: 'read'
+    env:
+      workload_identity_provider: 'projects/712187603283/locations/global/workloadIdentityPools/github-automation/providers/gar-ci-i'
+      wif_service_account: 'github-automation-bot@gha-gar-ci-i-be70aa.iam.gserviceaccount.com'
+    container:
+      image: 'us-central1-docker.pkg.dev/github-action-runner-i-02/ci-images/smoke-test-container-test:${{ needs.maybe-create-smoke-test-image.outputs.docker_tag }}'
+      credentials:
+        username: 'oauth2accesstoken'
+        password: '${{ env.GOOGLE_TOKEN }}'
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # ratchet:actions/checkout@v4
+
+      - name: 'Test runs on custom container'
+        shell: 'bash'
+        run: |
+          UNIQUE_FILE_IN_CONTAINER="/smoke-test-container-test/index.txt"
+          if [ ! -f "${UNIQUE_FILE_IN_CONTAINER}" ]; then
+            echo "File not found: ${UNIQUE_FILE_IN_CONTAINER}"
+            exit 1
+          else
+            echo "Found file: ${UNIQUE_FILE_IN_CONTAINER}"
+          fi
