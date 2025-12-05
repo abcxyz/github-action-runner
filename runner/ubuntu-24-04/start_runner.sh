@@ -47,7 +47,13 @@ fi
 
 if [[ -f "${PRERUN_LOG_FILE}" ]]; then
   echo "Logs from pre-run.sh script: ${PRERUN_LOG_FILE}"
+  echo "------------------------------------------------"
+  echo "--- BEGIN pre-run.sh log output"
+  echo "------------------------------------------------"
   cat "${PRERUN_LOG_FILE}"
+  echo "------------------------------------------------"
+  echo "--- END pre-run.sh log output"
+  echo "------------------------------------------------"
 else
   echo "Unable to find logs for pre-run.sh script: ${PRERUN_LOG_FILE}"
 fi
