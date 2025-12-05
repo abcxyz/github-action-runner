@@ -43,6 +43,8 @@ rm -f "${LOCK_FILE}"
 if [[ -f "${PRERUN_LOG_FILE}" ]]; then
   echo "Logs from pre-run.sh script:"
   cat "${PRERUN_LOG_FILE}"
+else
+  echo "Unable to find logs for pre-run.sh script"
 fi
 
 # Exit with a success code if the runner was terminated by the idle timeout.
