@@ -1,8 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 
-printenv
-
 echo "--- Checking for privileged access... ---"
 # Create a temporary directory to use as a safe mountpoint for our test.
 MOUNT_TEST_DIR="$(mktemp -d)"
