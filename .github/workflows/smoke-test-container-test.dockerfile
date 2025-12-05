@@ -1,3 +1,4 @@
+# Image used in smoke-tests.yml::maybe-create-smoke-test-image job.
 FROM debian:bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive

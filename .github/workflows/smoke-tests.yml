@@ -394,10 +394,14 @@ jobs:
     permissions:
       contents: 'read'
       packages: 'write'
+      id-token: 'write'
     with:
       runs_on: '"${{ inputs.runs-on }}"'
       dockerfile: '.github/workflows/smoke-test-container-test.dockerfile'
       github_image_name: 'ghcr.io/${{ github.repository }}/smoke-test-container-test'
+      artifact_registry_image_name: 'us-central1-docker.pkg.dev/github-action-runner-i-02/ci-images/smoke-test-container-test'
+      workload_identity_provider: 'projects/712187603283/locations/global/workloadIdentityPools/github-automation/providers/gar-ci-i'
+      wif_service_account: 'github-automation-bot@gha-gar-ci-i-be70aa.iam.gserviceaccount.com'
 
   # Note, normally this job fails in the initialize containers step with the
   # following error message:
