@@ -38,10 +38,15 @@ wait "${RUNNER_PID}" || EXIT_CODE=$?
 kill "${KILLER_PID}" || true
 
 # Clean up the lock file on exit
-rm -f "${LOCK_FILE}"
+if [[ -f "${LOCK_FILE}" ]]; then
+  echo "Removing lockfile: ${LOCK_FILE}"
+  rm -f "${LOCK_FILE}"
+else
+  echo "No lockfile to cleanup."
+fi
 
 if [[ -f "${PRERUN_LOG_FILE}" ]]; then
-  echo "Logs from pre-run.sh script:"
+  echo "Logs from pre-run.sh script: ${PRERUN_LOG_FILE}"
   cat "${PRERUN_LOG_FILE}"
 else
   echo "Unable to find logs for pre-run.sh script"
