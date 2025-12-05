@@ -14,6 +14,6 @@ touch "${LOCK_FILE}"
   printenv
 
   GOOGLE_TOKEN="this-is-a-test"
-  echo "GOOGLE_TOKEN=${GOOGLE_TOKEN}" >> /actions-runner/.env
+  echo "GOOGLE_TOKEN=${GOOGLE_TOKEN}" >> /workspace/.env
   export GOOGLE_TOKEN="${GOOGLE_TOKEN}"
 } >> "${PRERUN_LOG_FILE}"
