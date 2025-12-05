@@ -7,6 +7,7 @@ ENCODED_JIT_CONFIG="$(echo "${ENCODED_JIT_CONFIG}" | base64 -d | gunzip)"
 
 IDLE_TIMEOUT_SECONDS="${IDLE_TIMEOUT_SECONDS:-300}" # Default to 5 minutes
 LOCK_FILE="/tmp/runner.lock"
+PRERUN_LOG_FILE="/tmp/pre-run.log"
 
 # Start the runner in the background.
 # The DOCKER_HOST variable is inherited from the parent process.
@@ -37,7 +38,25 @@ wait "${RUNNER_PID}" || EXIT_CODE=$?
 kill "${KILLER_PID}" || true
 
 # Clean up the lock file on exit
-rm -f "${LOCK_FILE}"
+if [[ -f "${LOCK_FILE}" ]]; then
+  echo "Removing lockfile: ${LOCK_FILE}"
+  rm -f "${LOCK_FILE}"
+else
+  echo "No lockfile to cleanup: ${LOCK_FILE}"
+fi
+
+if [[ -f "${PRERUN_LOG_FILE}" ]]; then
+  echo "Logs from pre-run.sh script: ${PRERUN_LOG_FILE}"
+  echo "------------------------------------------------"
+  echo "--- BEGIN pre-run.sh log output"
+  echo "------------------------------------------------"
+  cat "${PRERUN_LOG_FILE}"
+  echo "------------------------------------------------"
+  echo "--- END pre-run.sh log output"
+  echo "------------------------------------------------"
+else
+  echo "Unable to find logs for pre-run.sh script: ${PRERUN_LOG_FILE}"
+fi
 
 # Exit with a success code if the runner was terminated by the idle timeout.
 # Exit code 143 corresponds to SIGTERM.

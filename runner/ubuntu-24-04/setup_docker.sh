@@ -39,7 +39,7 @@ dockerd-entrypoint.sh dockerd --host="${INTERNAL_DOCKER_SOCKET}" --storage-drive
 # We workaround this bug by utilizing the pre-mounted cloud build `/workspace`
 # directory. This allows us to utilize a path that is the same on the host VM
 # and current docker container filesystem.
-cp -r /actions-runner/* /workspace
+cp -ra /actions-runner/. /workspace
 chown -R runner:docker /workspace
 
 # In order to trick the GitHub Actions Runner binary into thinking that we are

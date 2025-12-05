@@ -265,6 +265,20 @@ jobs:
           echo "Checking Go version on self-hosted runner..."
           go version
 
+  test-pre-run-executed:
+    runs-on: '${{ inputs.runs-on }}'
+    needs: ['deploy-dispatcher']
+    steps:
+      - name: 'Check pre-run idle timeout lockfile is present'
+        shell: 'bash'
+        run: |
+          if [[ ! -f /tmp/runner.lock ]]; then
+            echo "Lockfile (/tmp/runner.lock) is not present on disk. Did the pre-run.sh script execute?"
+            exit 1
+          else
+            echo "Lockfile (/tmp/runner.lock) is present"
+          fi
+
   # TODO: Figure out why the target repos are failing to lint these unrelated abcxyz repos, they were passing previously.
 
   # run-lint-tests-pkg:
@@ -394,10 +408,14 @@ jobs:
     permissions:
       contents: 'read'
       packages: 'write'
+      id-token: 'write'
     with:
       runs_on: '"${{ inputs.runs-on }}"'
       dockerfile: '.github/workflows/smoke-test-container-test.dockerfile'
       github_image_name: 'ghcr.io/${{ github.repository }}/smoke-test-container-test'
+      artifact_registry_image_name: 'us-central1-docker.pkg.dev/github-action-runner-i-02/ci-images/smoke-test-container-test'
+      workload_identity_provider: 'projects/712187603283/locations/global/workloadIdentityPools/github-automation/providers/gar-ci-i'
+      wif_service_account: 'github-automation-bot@gha-gar-ci-i-be70aa.iam.gserviceaccount.com'
 
   # Note, normally this job fails in the initialize containers step with the
   # following error message:
