@@ -7,11 +7,13 @@ touch "${PRERUN_LOG_FILE}"
 
 LOCK_FILE="/tmp/runner.lock"
 touch "${LOCK_FILE}"
-echo "Runner lock file created at ${LOCK_FILE}. Idle timeout is now disabled." >> "${PRERUN_LOG_FILE}"
 
-echo "pre-run.sh script" >> "${PRERUN_LOG_FILE}"
-printenv >> "${PRERUN_LOG_FILE}"
+{
+  echo "pre-run.sh script"
+  echo "Runner lock file created at ${LOCK_FILE}. Idle timeout is now disabled."
+  printenv
 
-GOOGLE_TOKEN="this-is-a-test"
-echo "GOOGLE_TOKEN=${GOOGLE_TOKEN}" >> /actions-runner/.env
-export GOOGLE_TOKEN="${GOOGLE_TOKEN}"
+  GOOGLE_TOKEN="this-is-a-test"
+  echo "GOOGLE_TOKEN=${GOOGLE_TOKEN}" >> /actions-runner/.env
+  export GOOGLE_TOKEN="${GOOGLE_TOKEN}"
+} >> "${PRERUN_LOG_FILE}"
