@@ -17,7 +17,7 @@ touch "${LOCK_FILE}"
   echo "pre-run.sh script"
   echo "Runner lock file created at ${LOCK_FILE}. Idle timeout is now disabled."
 
-  cat "${GITHUB_EVENT_PATH}"
+  cat "${GITHUB_ENV}"
 
   GOOGLE_TOKEN="this-is-a-test"
   echo "GOOGLE_TOKEN=${GOOGLE_TOKEN}" >> "${GITHUB_ENV}"
