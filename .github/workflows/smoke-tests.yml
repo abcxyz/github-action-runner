@@ -265,6 +265,20 @@ jobs:
           echo "Checking Go version on self-hosted runner..."
           go version
 
+  test-pre-run-executed:
+    runs-on: '${{ inputs.runs-on }}'
+    needs: ['deploy-dispatcher']
+    steps:
+      - name: 'Check pre-run idle timeout lockfile is present'
+        shell: 'bash'
+        run: |
+          if [[ ! -f /tmp/runner.lock ]]; then
+            echo "Lockfile (/tmp/runner.lock) is not present on disk. Did the pre-run.sh script execute?"
+            exit 1
+          else
+            echo "Lockfile (/tmp/runner.lock) is present"
+          fi
+
   # TODO: Figure out why the target repos are failing to lint these unrelated abcxyz repos, they were passing previously.
 
   # run-lint-tests-pkg:
