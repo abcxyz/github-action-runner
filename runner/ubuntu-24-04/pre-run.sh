@@ -1,6 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
+# This script runs in the context of the runner and so has access to the
+# default runner env vars.
+GITHUB_ENV="${GITHUB_ENV:?}"
+GITHUB_EVENT_PATH="${GITHUB_EVENT_PATH:?}"
+
 # log to a file to that gets dumped to stdout in cloud build logs.
 PRERUN_LOG_FILE="/workspace/pre-run.log"
 touch "${PRERUN_LOG_FILE}"
