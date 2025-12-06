@@ -1,0 +1,290 @@
+# Copyright 2025 The Authors (see AUTHORS file)
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: 'cache'
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Run at the beginning of every day
+
+env:
+  INTEGRATION_PROJECT_ID: 'abcxyz-gar-runner-i-4f'
+  INTEGRATION_RUNNER_SA: 'abcxyz-gar-runner-sa@abcxyz-gar-runner-i-4f.iam.gserviceaccount.com'
+  GCP_PROJECT: 'abcxyz-artifacts'
+  IMAGE_PATH: 'us-docker.pkg.dev/abcxyz-artifacts/docker-images/github-action-runner'
+  GCB_CACHE_IMAGE: 'gcr.io/cloud-builders/docker'
+  RUNNER_NEXT_TAG: 'runner-next'
+  RUNNER_CURRENT_TAG: 'runner-current'
+  RUNNER_PREVIOUS_TAG: 'runner-previous'
+
+jobs:
+  promote_image:
+    runs-on: 'ubuntu-latest'
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+      packages: 'write'
+    steps:
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed' # ratchet:google-github-actions/auth@v2
+        with:
+          workload_identity_provider: '${{ vars.WIF_PROVIDER }}'
+          service_account: '${{ vars.WIF_SERVICE_ACCOUNT }}'
+          token_format: 'access_token'
+
+      - name: 'Authenticate to Artifact Registry'
+        uses: 'docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef' # ratchet:docker/login-action@v3
+        with:
+          username: 'oauth2accesstoken'
+          password: '${{ steps.auth.outputs.access_token }}'
+          registry: 'us-docker.pkg.dev'
+
+      - id: 'get-runner-next-cached-digest'
+        name: 'Get Runner Next Cached Digest'
+        run: |
+          set -e
+
+          # Create a minimal GCB config
+          cat <<'EOF' > get_snapshot_digest.yaml
+          serviceAccount: 'projects/${{ env.INTEGRATION_PROJECT_ID }}/serviceAccounts/${{ env.INTEGRATION_RUNNER_SA }}'
+          steps:
+          - name: '${{ env.GCB_CACHE_IMAGE }}'
+            id: 'list_images'
+            args: ['image', 'ls', '--digests']
+          options:
+            logging: CLOUD_LOGGING_ONLY
+          EOF
+
+          # STEP 1: Submit the build asynchronously and get the Build ID.
+          echo "Submitting GCB build asynchronously..."
+          BUILD_ID=$(gcloud builds submit \
+            --project="${{ env.INTEGRATION_PROJECT_ID }}" \
+            --config=get_snapshot_digest.yaml \
+            --no-source \
+            --quiet \
+            --async \
+            --format='value(id)')
+
+          if [ -z "$BUILD_ID" ]; then
+            echo "::error:: Could not get Build ID from async submission."
+            exit 1
+          fi
+          echo "GCB Build ID: $BUILD_ID"
+
+          # STEP 2: Poll for build completion.
+          echo "Polling for build completion..."
+          TOTAL_WAIT_TIME=0
+          POLL_INTERVAL=5
+          MAX_WAIT_TIME=300 # 5 minutes
+
+          while true; do
+            STATUS=$(gcloud builds describe "$BUILD_ID" \
+              --project="${{ env.INTEGRATION_PROJECT_ID }}" \
+              --format='value(status)')
+
+            echo "Current build status: $STATUS"
+
+            if [[ "$STATUS" == "SUCCESS" ]]; then
+              break
+            elif [[ "$STATUS" == "FAILURE" || "$STATUS" == "INTERNAL_ERROR" || "$STATUS" == "TIMEOUT" || "$STATUS" == "CANCELLED" ]]; then
+              echo "::error:: Build failed with status: $STATUS"
+              # Attempt to fetch logs even on failure for debugging
+              gcloud builds log "$BUILD_ID" --project="${{ env.INTEGRATION_PROJECT_ID }}" || true
+              exit 1
+            fi
+
+            if [ $TOTAL_WAIT_TIME -ge $MAX_WAIT_TIME ]; then
+              echo "::error:: Timed out waiting for build to complete."
+              exit 1
+            fi
+
+            sleep $POLL_INTERVAL
+            TOTAL_WAIT_TIME=$((TOTAL_WAIT_TIME + POLL_INTERVAL))
+          done
+
+          echo "Build completed successfully."
+
+          # STEP 3: Poll for logs to become available.
+          echo "Polling for logs..."
+          LOG_WAIT_TIME=0
+          LOG_POLL_INTERVAL=5
+          LOG_MAX_WAIT_TIME=180 # 3 minutes
+
+          BUILD_LOG=$(mktemp)
+
+          while true; do
+            # Fetch the logs
+            gcloud builds log "$BUILD_ID" --project="${{ env.INTEGRATION_PROJECT_ID }}" > "$BUILD_LOG" 2>/dev/null
+
+            # Check if the log contains the digest info we need
+            if grep -F "${{ env.IMAGE_PATH }}" "$BUILD_LOG" | grep -F -q "${{ env.RUNNER_NEXT_TAG }}"; then
+              echo "Logs with digest found."
+              break
+            fi
+
+            if [ $LOG_WAIT_TIME -ge $LOG_MAX_WAIT_TIME ]; then
+              echo "::error:: Timed out waiting for build logs to contain digest information."
+              echo "--- Last received GCB build log ---"
+              cat "$BUILD_LOG"
+              exit 1
+            fi
+
+            echo "Logs not yet populated with digest, waiting..."
+            sleep $LOG_POLL_INTERVAL
+            LOG_WAIT_TIME=$((LOG_WAIT_TIME + LOG_POLL_INTERVAL))
+          done
+
+          echo "--- GCB build log ---"
+          cat "$BUILD_LOG"
+          echo "---------------------"
+
+          # Parse the log for the digest.
+          RUNNER_NEXT_CACHED_DIGEST=$(grep -F "${{ env.IMAGE_PATH }}" "$BUILD_LOG" | \
+            grep -F "${{ env.RUNNER_NEXT_TAG }}" | \
+            awk '{print $3}' | \
+            tail -n1)
+
+          if [ -z "$RUNNER_NEXT_CACHED_DIGEST" ]; then
+            echo "::error:: Could not find RUNNER_NEXT_CACHED_DIGEST in GCB build log."
+            exit 1
+          fi
+
+          echo "runner_next_cached_digest=$RUNNER_NEXT_CACHED_DIGEST" >> "$GITHUB_OUTPUT"
+          echo "runner-next Cached Digest: $RUNNER_NEXT_CACHED_DIGEST"
+
+      - id: 'get-runner-next-actual-digest'
+        name: 'Get Runner Next Actual Digest'
+        run: |
+          set -e
+          # Pull the image tagged as ${{ env.RUNNER_NEXT_TAG }} from the registry.
+          # This ensures we get the most up-to-date image referenced by this tag.
+          echo "Pulling runner-next runner image to get its actual digest from the registry."
+          docker pull "${{ env.IMAGE_PATH }}:${{ env.RUNNER_NEXT_TAG }}"
+
+          # Inspect the pulled image to get its canonical digest from the registry.
+          # This is the source of truth of what the runner-next tag actually points to.
+          RUNNER_NEXT_REGISTRY_DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "${{ env.IMAGE_PATH }}:${{ env.RUNNER_NEXT_TAG }}" | awk -F '@' '{print $2}')"
+
+          if [ -z "$RUNNER_NEXT_REGISTRY_DIGEST" ]; then
+            echo "::error:: RUNNER_NEXT_REGISTRY_DIGEST retrieval failed."
+            exit 1
+          fi
+
+          echo "Actual Registry Digest for runner-next: $RUNNER_NEXT_REGISTRY_DIGEST"
+          echo "runner_next_actual_digest=$RUNNER_NEXT_REGISTRY_DIGEST" >> "$GITHUB_OUTPUT"
+
+      - id: 'comparison'
+        name: 'Check for Promotion'
+        run: |-
+          RUNNER_NEXT_CACHED_DIGEST="${{ steps.get-runner-next-cached-digest.outputs.runner_next_cached_digest }}"
+          RUNNER_NEXT_ACTUAL_DIGEST="${{ steps.get-runner-next-actual-digest.outputs.runner_next_actual_digest }}"
+
+          # 1. Safety Gate: Check for GCB synchronization
+          if [ "$RUNNER_NEXT_CACHED_DIGEST" != "$RUNNER_NEXT_ACTUAL_DIGEST" ]; then
+            echo "Digest mismatch detected ($RUNNER_NEXT_CACHED_DIGEST != $RUNNER_NEXT_ACTUAL_DIGEST). Status is NOT confirmed. Skipping promotion."
+            echo "should_promote=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # 2. Idempotency Gate: Check if the actual digest is already the runner-current digest.
+          RUNNER_CURRENT_ACTUAL_DIGEST=$(gcloud artifacts docker images describe "${{ env.IMAGE_PATH }}:${{ env.RUNNER_CURRENT_TAG }}" \
+            --format='value(image_summary.digest)' --project="${{ env.GCP_PROJECT }}" 2>/dev/null)
+
+          if [ "$RUNNER_NEXT_ACTUAL_DIGEST" == "$RUNNER_CURRENT_ACTUAL_DIGEST" ]; then
+              echo "Target image is already promoted ($RUNNER_NEXT_ACTUAL_DIGEST). No action needed."
+              echo "should_promote=false" >> "$GITHUB_OUTPUT"
+              exit 0
+          fi
+
+          # If we reach here, promotion is required and safe.
+          echo "Digests match! Promotion is required."
+          echo "runner_current_actual_digest=$RUNNER_CURRENT_ACTUAL_DIGEST" >> "$GITHUB_OUTPUT"
+          echo "should_promote=true" >> "$GITHUB_OUTPUT"
+
+        # This step will execute once the cached runner-next and the actual runner-next are confrimed to be in sync
+      - name: 'Execute Tag Promotion'
+        if: |-
+          ${{ steps.comparison.outputs.should_promote == 'true' }}
+        run: |
+          set -e
+
+          # --- 1. CAPTURE DIGESTS ---
+          RUNNER_NEXT_ACTUAL_DIGEST="${{ steps.get-runner-next-actual-digest.outputs.runner_next_actual_digest }}"
+          # Digest of the image tagged with runner-current
+          RUNNER_CURRENT_ACTUAL_DIGEST="${{ steps.comparison.outputs.runner_current_actual_digest }}"
+
+          # --- 2. Move runner-previous to runner-current ---
+          if [[ -n "${RUNNER_CURRENT_ACTUAL_DIGEST}" ]]; then
+            echo "Moving tag '${{ env.RUNNER_PREVIOUS_TAG }}' to '${{ env.RUNNER_CURRENT_TAG }}' (digest: $RUNNER_CURRENT_ACTUAL_DIGEST)"
+            gcloud artifacts docker tags add \
+              "${{ env.IMAGE_PATH }}@$RUNNER_CURRENT_ACTUAL_DIGEST" \
+              "${{ env.IMAGE_PATH }}:${{ env.RUNNER_PREVIOUS_TAG }}" \
+              --project="${{ env.GCP_PROJECT }}" --quiet
+          else
+            echo "No image found for tag '${{ env.RUNNER_CURRENT_TAG }}'. Skipping previous tag update."
+          fi
+
+          # --- 3. Move runner-current to runner-next ---
+          echo "Moving tag '${{ env.RUNNER_CURRENT_TAG }}' to '${{ env.RUNNER_NEXT_TAG }}' (digest: $RUNNER_NEXT_ACTUAL_DIGEST)"
+          gcloud artifacts docker tags add \
+            "${{ env.IMAGE_PATH }}@$RUNNER_NEXT_ACTUAL_DIGEST" \
+            "${{ env.IMAGE_PATH }}:${{ env.RUNNER_CURRENT_TAG }}" \
+            --project="${{ env.GCP_PROJECT }}" --quiet
+
+          echo "Tag promotion successful!"
+
+      - name: 'Output Final State'
+        if: |
+          always()
+        run: |
+          find_version_tag() {
+            local digest="$1"
+            if [ -z "$digest" ]; then
+              echo "unknown"
+              return
+            fi
+            # The '|| true' handles cases where a digest might exist but has no tags.
+            gcloud artifacts docker images list-tags \
+              "${{ env.IMAGE_PATH }}@${digest}" \
+              --project="${{ env.GCP_PROJECT }}" \
+              --filter='tags ~ ^v' \
+              --format='get(tags)' \
+              --limit=1 | cut -d';' -f1 || true
+          }
+
+          print_tag_state() {
+            local tag_name="$1"
+            local digest
+            digest=$(gcloud artifacts docker images describe "${{ env.IMAGE_PATH }}:${tag_name}" --format='value(image_summary.digest)' --project="${{ env.GCP_PROJECT }}" 2>/dev/null || true)
+
+            if [ -n "$digest" ]; then
+              local version_tag
+              version_tag=$(find_version_tag "$digest")
+              echo ""
+              echo "## Image for ${tag_name} tag"
+              echo "- **Version:** ${version_tag:-not-found}"
+              echo "- **Digest:** $digest"
+            else
+              echo ""
+              echo "## Could not find image for ${tag_name} tag."
+            fi
+          }
+
+          {
+            echo "--- Final State ---"
+            print_tag_state "${{ env.RUNNER_CURRENT_TAG }}"
+            print_tag_state "${{ env.RUNNER_PREVIOUS_TAG }}"
+            print_tag_state "${{ env.RUNNER_NEXT_TAG }}"
+          } >> "$GITHUB_STEP_SUMMARY"

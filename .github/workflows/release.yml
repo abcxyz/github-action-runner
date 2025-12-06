@@ -129,7 +129,7 @@ jobs:
         if: |-
           ${{ matrix.context == 'ubuntu-24-04' && matrix.arch == 'amd64' }}
         env:
-          LATEST_TAG: 'runner-latest'
+          LATEST_TAG: 'runner-next'
           SOURCE_IMAGE: '${{ needs.image-release.outputs.target_image }}'
         run: |-
           echo "Adding ${{ env.LATEST_TAG }} tag to ${{ env.SOURCE_IMAGE }}"
