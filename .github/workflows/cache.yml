@@ -1,0 +1,149 @@
+# Copyright 2025 The Authors (see AUTHORS file)
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: 'cache'
+
+on:
+  schedule:
+    - cron: '0 * * * *' # Run at the beginning of every hour
+
+env:
+  GCP_PROJECT: 'abcxyz-artifacts'
+  IMAGE_PATH: 'us-docker.pkg.dev/abcxyz-artifacts/docker-images/github-action-runner'
+  TARGET_LATEST_TAG: 'runner-latest'
+  TARGET_GUARANTEED_TAG: 'runner-current'
+
+jobs:
+  promote_guaranteed_image:
+    runs-on: 'ubuntu-latest'
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+    steps:
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed' # ratchet:google-github-actions/auth@v2
+        with:
+          workload_identity_provider: '${{ vars.WIF_PROVIDER }}'
+          service_account: '${{ vars.WIF_SERVICE_ACCOUNT }}'
+          token_format: 'access_token'
+
+      - name: 'Authenticate to Artifact Registry'
+        uses: 'docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef' # ratchet:docker/login-action@v3
+        with:
+          username: 'oauth2accesstoken'
+          password: '${{ steps.auth.outputs.access_token }}'
+          registry: 'us-docker.pkg.dev'
+
+      - id: 'retrieve-latest-digests'
+        name: 'Identify Snapshot and Actual Digests'
+        run: |-
+          echo "Pulling latest candidate image: ${{ env.IMAGE_PATH }}:${{ env.TARGET_LATEST_TAG }}"
+          docker pull "${{ env.IMAGE_PATH }}:${{ env.TARGET_LATEST_TAG }}"
+
+          echo "Find the digest"
+          SNAPSHOT_DIGEST=$(docker image ls --digests | \
+            grep -F "${{ env.IMAGE_PATH }}" | \
+            grep -F "${{ env.TARGET_LATEST_TAG }}" |
+            awk '{print $3}')
+
+          if [ -z "$SNAPSHOT_DIGEST" ]; then
+            echo "::error:: SNAPSHOT_DIGEST (Simulated Cache) extraction failed."
+            exit 1
+          fi
+
+          # 3. EXTRACT ACTUAL DIGEST (The ground truth of the pulled image)
+          ACTUAL_DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "${{ env.IMAGE_PATH }}:${{ env.TARGET_LATEST_TAG }}" | awk -F '@' '{print $2}')"
+
+          if [ -z "$ACTUAL_DIGEST" ]; then
+            echo "::error:: ACTUAL_DIGEST retrieval failed."
+            exit 1
+          fi
+
+          echo "SNAPSHOT_DIGEST=$SNAPSHOT_DIGEST" >> "$GITHUB_OUTPUT"
+          echo "ACTUAL_DIGEST=$ACTUAL_DIGEST" >> "$GITHUB_OUTPUT"
+
+          echo "Target Digest (Velocity Tag): $ACTUAL_DIGEST"
+          echo "Cache Status Digest (From Snapshot): $SNAPSHOT_DIGEST"
+
+      - id: 'comparison-step'
+        name: 'Check for Promotion'
+        run: |-
+          SNAPSHOT_DIGEST="${{ steps.retrieve-latest-digests.outputs.SNAPSHOT_DIGEST }}"
+          ACTUAL_DIGEST="${{ steps.retrieve-latest-digests.outputs.ACTUAL_DIGEST }}"
+
+          # 1. If the digests DO NOT match, it implies a mismatch. This means a change is set to roll out or is actively rolling out in the cache so its a no-op
+          if [ "$SNAPSHOT_DIGEST" != "$ACTUAL_DIGEST" ]; then
+            echo "Digest mismatch detected ($SNAPSHOT_DIGEST != $ACTUAL_DIGEST). Status is NOT confirmed. Skipping promotion."
+            echo "should_promote=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # 2. Get the current digest of the GUARANTEED tag (to prevent unnecessary tag updates)
+          CURRENT_GUARANTEED_DIGEST=$(gcloud artifacts docker images describe "${{ env.IMAGE_PATH }}:${{ env.TARGET_GUARANTEED_TAG }}" \
+            --format='value(image_summary.digest)' --project="${{ env.GCP_PROJECT }}" 2>/dev/null)
+
+          if [ "$ACTUAL_DIGEST" == "$CURRENT_GUARANTEED_DIGEST" ]; then
+              echo "Target image is already guaranteed ($ACTUAL_DIGEST). No action needed."
+              echo "should_promote=false" >> "$GITHUB_OUTPUT"
+              exit 0
+          fi
+
+          echo "Success! Digests match. Snapshot and Actual digests are in sync. Promotion is required."
+          echo "should_promote=true" >> "$GITHUB_OUTPUT"
+
+      - name: 'Promote Image'
+        if: |-
+         ${{ steps.comparison-step.outputs.should_promote == 'true' }}
+        run: |
+          ACTUAL_DIGEST="${{ steps.retrieve-latest-digests.outputs.ACTUAL_DIGEST }}"
+          echo "Promoting $ACTUAL_DIGEST to ${{ env.TARGET_GUARANTEED_TAG }}."
+
+          gcloud artifacts docker tags add "${{ env.IMAGE_PATH }}@$ACTUAL_DIGEST" \
+            "${{ env.IMAGE_PATH }}:${{ env.TARGET_GUARANTEED_TAG }}" --project="${{ env.GCP_PROJECT }}"
+
+          echo "Promotion successful."
+
+      - name: 'Output Final State'
+        if: |
+          always()
+        run: |
+          GUARANTEED_DIGEST=$(gcloud artifacts docker images describe "${{ env.IMAGE_PATH }}:${{ env.TARGET_GUARANTEED_TAG }}" --format='value(image_summary.digest)' --project="${{ env.GCP_PROJECT }}" 2>/dev/null)
+          LATEST_DIGEST=$(gcloud artifacts docker images describe "${{ env.IMAGE_PATH }}:${{ env.TARGET_LATEST_TAG }}" --format='value(image_summary.digest)' --project="${{ env.GCP_PROJECT }}" 2>/dev/null)
+
+          {
+            echo "--- Final State ---"
+
+            if [ -n "$GUARANTEED_DIGEST" ]; then
+              echo ""
+              echo "### Image for GUARANTEED tag (${{ env.TARGET_GUARANTEED_TAG }})"
+              echo "- **Digest:** $GUARANTEED_DIGEST"
+              GUARANTEED_TAGS=$(gcloud artifacts docker images list-tags "${{ env.IMAGE_PATH }}@$GUARANTEED_DIGEST" --format='get(tags)' --project="${{ env.GCP_PROJECT }}")
+              echo "- **All tags for this digest:** $GUARANTEED_TAGS"
+            else
+              echo ""
+              echo "### Could not retrieve image for GUARANTEED tag (${{ env.TARGET_GUARANTEED_TAG }})."
+            fi
+
+            if [ -n "$LATEST_DIGEST" ]; then
+              echo ""
+              echo "### Image for LATEST tag (${{ env.TARGET_LATEST_TAG }})"
+              echo "- **Digest:** $LATEST_DIGEST"
+              LATEST_TAGS=$(gcloud artifacts docker images list-tags "${{ env.IMAGE_PATH }}@$LATEST_DIGEST" --format='get(tags)' --project="${{ env.GCP_PROJECT }}")
+              echo "- **All tags for this digest:** $LATEST_TAGS"
+            else
+              echo ""
+              echo "### Could not retrieve image for LATEST tag (${{ env.TARGET_LATEST_TAG }})."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
