@@ -15,10 +15,15 @@ touch "${LOCK_FILE}"
 
 WIF_PROVIDER="projects/712187603283/locations/global/workloadIdentityPools/github-automation/providers/gar-ci-i"
 SA_EMAIL="github-automation-bot@gha-gar-ci-i-be70aa.iam.gserviceaccount.com"
+GAR_IMAGE="us-central1-docker.pkg.dev/github-action-runner-i-02/ci-images/smoke-test-container-test"
+GAR_IMAGE_REGISTRY=$(echo "${GAR_IMAGE}" | cut -d '/' -f 1)
 
 {
   echo "pre-run.sh script"
   echo "Runner lock file created at ${LOCK_FILE}. Idle timeout is now disabled."
 
-  /workspace/generate-token.sh "${WIF_PROVIDER}" "${SA_EMAIL}"
+  GOOGLE_TOKEN="$(/workspace/generate-token.sh "${WIF_PROVIDER}" "${SA_EMAIL}")"
+  echo "GOOGLE_TOKEN=${GOOGLE_TOKEN}"
+  echo "GOOGLE_TOKEN=${GOOGLE_TOKEN}" >> "${GITHUB_ENV}"
+  echo "${GOOGLE_TOKEN}" | docker login -u oauth2accesstoken --password-stdin "https://${GAR_IMAGE_REGISTRY}"
 } >> "${PRERUN_LOG_FILE}"

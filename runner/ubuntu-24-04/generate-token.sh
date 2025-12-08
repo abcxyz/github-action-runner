@@ -6,10 +6,6 @@ set -e
 WIF_PROVIDER_NAME="$1"
 SERVICE_ACCOUNT_EMAIL="$2"
 
-GITHUB_ENV="${GITHUB_ENV:?}"
-
-echo "Generating GCP token..."
-
 if [[ -z "${WIF_PROVIDER_NAME}" || -z "${SERVICE_ACCOUNT_EMAIL}" ]]; then
   echo "Usage: $0 <WIF_PROVIDER_NAME> <SERVICE_ACCOUNT_EMAIL>"
   exit 1
@@ -21,16 +17,12 @@ if [[ -z "${ACTIONS_ID_TOKEN_REQUEST_URL}" || -z "${ACTIONS_ID_TOKEN_REQUEST_TOK
   exit 1
 fi
 
-echo "[GCP Token] Getting GitHub OIDC Token"
-
 # ------------------------------------------------------------------------------
 # 1. Get GitHub OIDC Token
 # ------------------------------------------------------------------------------
 # We use the WIF Provider Name as the audience
 # We must URL encode the audience for the GET request
 ENCODED_AUDIENCE=$(jq -rn --arg x "https://iam.googleapis.com/${WIF_PROVIDER_NAME}" '$x|@uri')
-
-echo "[GCP Token] GitHub OIDC Token URL: ${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${ENCODED_AUDIENCE}"
 
 GITHUB_OIDC_TOKEN=$(curl -s -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
   "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${ENCODED_AUDIENCE}" | jq -r '.value' || true)
@@ -39,8 +31,6 @@ if [[ "${GITHUB_OIDC_TOKEN}" == "null" ]]; then
   echo "Failed to retrieve GitHub OIDC token"
   exit 1
 fi
-
-echo "[GCP Token] Exchanging for Google STS Token"
 
 # ------------------------------------------------------------------------------
 # 2. Exchange for Google STS Token (Security Token Service)
@@ -62,8 +52,6 @@ if [[ "${STS_TOKEN}" == "null" ]]; then
   exit 1
 fi
 
-echo "[GCP Token] Impersonating Service Account and generating token"
-
 # ------------------------------------------------------------------------------
 # 3. Impersonate Service Account (Generate final OAuth Token)
 # ------------------------------------------------------------------------------
@@ -80,5 +68,4 @@ if [[ "${GCP_ACCESS_TOKEN}" == "null" ]]; then
 fi
 
 # Output the token (or mask it/export it as needed)
-echo "GOOGLE_TOKEN=${GCP_ACCESS_TOKEN}"
-echo "GOOGLE_TOKEN=${GCP_ACCESS_TOKEN}" >> "${GITHUB_ENV}"
+echo "${GCP_ACCESS_TOKEN}"
