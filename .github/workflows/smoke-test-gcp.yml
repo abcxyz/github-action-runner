@@ -45,7 +45,7 @@ jobs:
           token_format: 'access_token'
 
       - name: 'Setup gcloud'
-        uses: 'google-github-actions/setup-gcloud@6189d56e4096ee891640bb02ac264be376592d6a' # ratchet:google-github-actions/setup-gcloud@v2/
+        uses: 'google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db' # ratchet:google-github-actions/setup-gcloud@v3
 
       - name: 'Verify gcloud authentication'
         run: 'gcloud auth list'
