@@ -28,7 +28,10 @@ echo "[GCP Token] Getting GitHub OIDC Token"
 # ------------------------------------------------------------------------------
 # We use the WIF Provider Name as the audience
 # We must URL encode the audience for the GET request
-ENCODED_AUDIENCE=$(jq -rn --arg x "${WIF_PROVIDER_NAME}" '$x|@uri')
+ENCODED_AUDIENCE=$(jq -rn --arg x "https://iam.googleapis.com/${WIF_PROVIDER_NAME}" '$x|@uri')
+
+echo "[GCP Token] GitHub OIDC Token URL: ${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${ENCODED_AUDIENCE}"
+
 GITHUB_OIDC_TOKEN=$(curl -s -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
   "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${ENCODED_AUDIENCE}" | jq -r '.value' || true)
 
