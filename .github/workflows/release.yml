@@ -22,6 +22,9 @@ on:
 # Don't cancel in progress since we don't want to have half-baked releases.
 concurrency: '${{ github.workflow }}-${{ github.head_ref || github.ref }}-release'
 
+env:
+  RELEASE_DOCKER_IMAGE_NAME: 'us-docker.pkg.dev/abcxyz-artifacts/docker-images/github-action-runner'
+
 jobs:
   set-matrix:
     runs-on: 'ubuntu-latest'
@@ -65,6 +68,8 @@ jobs:
       fail-fast: false
       matrix:
         include: '${{ fromJson(needs.set-matrix.outputs.runner_contexts) }}'
+    outputs:
+      target_image: '${{ steps.copy_step.outputs.target_image }}'
     steps:
       - name: 'Setup QEMU'
         uses: 'docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130' # ratchet:docker/setup-qemu-action@v3
@@ -92,10 +97,55 @@ jobs:
           registry: 'us-docker.pkg.dev'
 
       - name: 'Copy images to Release registry (${{ matrix.context }}-${{ matrix.arch }})'
+        id: 'copy_step'
         env:
           SOURCE_DOCKER_IMAGE: 'us-central1-docker.pkg.dev/github-action-runner-i-02/ci-images/github-action-runner:${{ github.sha }}-${{ matrix.context }}-${{ matrix.arch }}'
-          TARGET_DOCKER_IMAGE: 'us-docker.pkg.dev/abcxyz-artifacts/docker-images/github-action-runner:${{ github.ref_name }}-${{ matrix.context }}-${{ matrix.arch }}'
-        run: |
+          TARGET_DOCKER_IMAGE: '${{ env.RELEASE_DOCKER_IMAGE_NAME }}:${{ github.ref_name }}-${{ matrix.context }}-${{ matrix.arch }}'
+        run: |-
           docker pull "${{ env.SOURCE_DOCKER_IMAGE }}"
           docker tag "${{ env.SOURCE_DOCKER_IMAGE }}" "${{ env.TARGET_DOCKER_IMAGE }}"
           docker push "${{ env.TARGET_DOCKER_IMAGE }}"
+          echo "target_image=${{ env.TARGET_DOCKER_IMAGE }}" >> "$GITHUB_OUTPUT"
+
+  tag-latest:
+    needs: ['set-matrix', 'image-release']
+    runs-on: 'ubuntu-latest'
+    permissions:
+      id-token: 'write'
+    strategy:
+      fail-fast: false
+      matrix:
+        include: '${{ fromJson(needs.set-matrix.outputs.runner_contexts) }}'
+    steps:
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed' # ratchet:google-github-actions/auth@v2
+        with:
+          workload_identity_provider: '${{ vars.WIF_PROVIDER }}'
+          service_account: '${{ vars.WIF_SERVICE_ACCOUNT }}'
+          token_format: 'access_token'
+
+      - name: 'Tag latest image'
+        if: |-
+          ${{ matrix.context == 'ubuntu-24-04' && matrix.arch == 'amd64' }}
+        env:
+          LATEST_TAG: 'runner-latest'
+          SOURCE_IMAGE: '${{ needs.image-release.outputs.target_image }}'
+        run: |-
+          echo "Adding ${{ env.LATEST_TAG }} tag to ${{ env.SOURCE_IMAGE }}"
+
+          PROJECT=$(echo "${{ env.SOURCE_IMAGE }}" | cut -d'/' -f2)
+          echo "Inferred GCP Project: $PROJECT"
+
+          NEW_DIGEST=$(gcloud artifacts docker images describe "${{ env.SOURCE_IMAGE }}" \
+            --format='value(image_summary.digest)' --project="$PROJECT")
+
+          if [ -z "$NEW_DIGEST" ]; then
+            echo "::error:: Failed to retrieve NEW_DIGEST for ${{ env.SOURCE_IMAGE }}. Aborting tagging."
+            exit 1
+          fi
+
+          gcloud artifacts docker tags add "${{ env.RELEASE_DOCKER_IMAGE_NAME }}@$NEW_DIGEST" \
+            "${{ env.RELEASE_DOCKER_IMAGE_NAME }}:${{ env.LATEST_TAG }}" --project="$PROJECT"
+
+          echo "Updated ${{ env.LATEST_TAG }} to point to ${{ env.SOURCE_IMAGE }}@$NEW_DIGEST."
