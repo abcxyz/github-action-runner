@@ -13,8 +13,6 @@ touch "${PRERUN_LOG_FILE}"
 LOCK_FILE="/tmp/runner.lock"
 touch "${LOCK_FILE}"
 
-GCLOUD_CONFIG_FILE="/tmp/gcp_creds.json"
-
 WIF_PROVIDER="projects/712187603283/locations/global/workloadIdentityPools/github-automation/providers/gar-ci-i"
 SA_EMAIL="github-automation-bot@gha-gar-ci-i-be70aa.iam.gserviceaccount.com"
 
