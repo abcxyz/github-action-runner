@@ -6,6 +6,10 @@ set -e
 WIF_PROVIDER_NAME="$1"
 SERVICE_ACCOUNT_EMAIL="$2"
 
+GITHUB_ENV="${GITHUB_ENV:?}"
+
+echo "Generating GCP token..."
+
 if [[ -z "${WIF_PROVIDER_NAME}" || -z "${SERVICE_ACCOUNT_EMAIL}" ]]; then
   echo "Usage: $0 <WIF_PROVIDER_NAME> <SERVICE_ACCOUNT_EMAIL>"
   exit 1
@@ -16,6 +20,8 @@ if [[ -z "${ACTIONS_ID_TOKEN_REQUEST_URL}" || -z "${ACTIONS_ID_TOKEN_REQUEST_TOK
   echo "Ensure 'permissions: id-token: write' is set in your workflow."
   exit 1
 fi
+
+echo "[GCP Token] Getting GitHub OIDC Token"
 
 # ------------------------------------------------------------------------------
 # 1. Get GitHub OIDC Token
@@ -30,6 +36,8 @@ if [[ "${GITHUB_OIDC_TOKEN}" == "null" ]]; then
   echo "Failed to retrieve GitHub OIDC token"
   exit 1
 fi
+
+echo "[GCP Token] Exchanging for Google STS Token"
 
 # ------------------------------------------------------------------------------
 # 2. Exchange for Google STS Token (Security Token Service)
@@ -51,6 +59,8 @@ if [[ "${STS_TOKEN}" == "null" ]]; then
   exit 1
 fi
 
+echo "[GCP Token] Impersonating Service Account and generating token"
+
 # ------------------------------------------------------------------------------
 # 3. Impersonate Service Account (Generate final OAuth Token)
 # ------------------------------------------------------------------------------
@@ -67,4 +77,5 @@ if [[ "${GCP_ACCESS_TOKEN}" == "null" ]]; then
 fi
 
 # Output the token (or mask it/export it as needed)
-echo "${GCP_ACCESS_TOKEN}"
+echo "GOOGLE_TOKEN=${GCP_ACCESS_TOKEN}"
+echo "GOOGLE_TOKEN=${GCP_ACCESS_TOKEN}" >> "${GITHUB_ENV}"
