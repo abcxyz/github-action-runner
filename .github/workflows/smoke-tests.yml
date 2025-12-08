@@ -430,6 +430,7 @@ jobs:
     permissions:
       contents: 'read'
       packages: 'read'
+      id-token: 'write'
     container:
       image: 'ghcr.io/${{ github.repository }}/smoke-test-container-test:${{ needs.maybe-create-smoke-test-image.outputs.docker_tag }}'
       credentials:
@@ -456,7 +457,7 @@ jobs:
     needs: ['maybe-create-smoke-test-image']
     permissions:
       contents: 'read'
-      packages: 'read'
+      id-token: 'write'
     env:
       WORKLOAD_IDENTITY_PROVIDER: 'projects/712187603283/locations/global/workloadIdentityPools/github-automation/providers/gar-ci-i'
       WIF_SERVICE_ACCOUNT: 'github-automation-bot@gha-gar-ci-i-be70aa.iam.gserviceaccount.com'
