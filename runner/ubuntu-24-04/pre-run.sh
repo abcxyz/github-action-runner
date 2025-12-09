@@ -39,26 +39,10 @@ GAR_IMAGE_REGISTRY=$(echo "${GAR_IMAGE}" | cut -d '/' -f 1)
   cat "${GITHUB_ENV}"
 
   echo ""
-  echo "ls -al /workspace/"
-  ls -al /workspace
+  echo "cat /workspace/_work/_PipelineMapping/abcxyz/github-action-runner/PipelineFolder.json"
+  cat /workspace/_work/_PipelineMapping/abcxyz/github-action-runner/PipelineFolder.json
 
   echo ""
-  echo "ls -al /workspace/_work/"
-  ls -al /workspace/_work/
-
-  echo ""
-  echo "ls -al /workspace/_work/_temp/"
-  ls -al /workspace/_work/_temp/
-
-  echo ""
-  echo "ls -al /workspace/_work/_temp/_runner_file_commands"
-  ls -al /workspace/_work/_temp/_runner_file_commands
-
-  echo ""
-  echo "ls -al /workspace/_work/_temp/_github_workflow/"
-  ls -al /workspace/_work/_temp/_github_workflow/
-
-  echo ""
-  echo "find /workspace"
-  find /workspace
+  echo "ls -al /workspace/_work/github-action-runner/github-action-runner"
+  ls -al /workspace/_work/github-action-runner/github-action-runner
 } >> "${PRERUN_LOG_FILE}"
