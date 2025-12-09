@@ -37,4 +37,28 @@ GAR_IMAGE_REGISTRY=$(echo "${GAR_IMAGE}" | cut -d '/' -f 1)
 
   echo "GITHUB_ENV file ${GITHUB_ENV}:"
   cat "${GITHUB_ENV}"
+
+  echo ""
+  echo "ls -al /workspace/"
+  ls -al /workspace
+
+  echo ""
+  echo "ls -al /workspace/_work/"
+  ls -al /workspace/_work/
+
+  echo ""
+  echo "ls -al /workspace/_work/_temp/"
+  ls -al /workspace/_work/_temp/
+
+  echo ""
+  echo "ls -al /workspace/_work/_temp/_runner_file_commands"
+  ls -al /workspace/_work/_temp/_runner_file_commands
+
+  echo ""
+  echo "ls -al /workspace/_work/_temp/_github_workflow/"
+  ls -al /workspace/_work/_temp/_github_workflow/
+
+  echo ""
+  echo "find /workspace"
+  find /workspace
 } >> "${PRERUN_LOG_FILE}"
