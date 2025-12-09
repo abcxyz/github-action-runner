@@ -45,4 +45,9 @@ GAR_IMAGE_REGISTRY=$(echo "${GAR_IMAGE}" | cut -d '/' -f 1)
   echo ""
   echo "ls -al /workspace/_work/github-action-runner/github-action-runner"
   ls -al /workspace/_work/github-action-runner/github-action-runner
+
+  echo ""
+  echo "cat /workspace/.runner"
+  cat /workspace/.runner
+
 } >> "${PRERUN_LOG_FILE}"
