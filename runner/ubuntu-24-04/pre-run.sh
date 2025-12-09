@@ -22,8 +22,19 @@ GAR_IMAGE_REGISTRY=$(echo "${GAR_IMAGE}" | cut -d '/' -f 1)
   echo "pre-run.sh script"
   echo "Runner lock file created at ${LOCK_FILE}. Idle timeout is now disabled."
 
+  echo "ENV:"
+  printenv
+
+  echo "ENV file /workspace/.env:"
+  cat /workspace/.env
+
+  echo "Webhook event payload ${GITHUB_EVENT_PATH}:"
+  cat "${GITHUB_EVENT_PATH}"
+
   GOOGLE_TOKEN="$(/workspace/generate-token.sh "${WIF_PROVIDER}" "${SA_EMAIL}")"
-  echo "GOOGLE_TOKEN=${GOOGLE_TOKEN}"
   echo "GOOGLE_TOKEN=${GOOGLE_TOKEN}" >> "${GITHUB_ENV}"
   echo "${GOOGLE_TOKEN}" | docker login -u oauth2accesstoken --password-stdin "https://${GAR_IMAGE_REGISTRY}"
+
+  echo "GITHUB_ENV file ${GITHUB_ENV}:"
+  cat "${GITHUB_ENV}"
 } >> "${PRERUN_LOG_FILE}"
