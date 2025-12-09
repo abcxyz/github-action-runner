@@ -461,12 +461,8 @@ jobs:
     env:
       WORKLOAD_IDENTITY_PROVIDER: 'projects/712187603283/locations/global/workloadIdentityPools/github-automation/providers/gar-ci-i'
       WIF_SERVICE_ACCOUNT: 'github-automation-bot@gha-gar-ci-i-be70aa.iam.gserviceaccount.com'
-      GOOGLE_TOKEN: 'REPLACE'
     container:
       image: 'us-central1-docker.pkg.dev/github-action-runner-i-02/ci-images/smoke-test-container-test:${{ needs.maybe-create-smoke-test-image.outputs.docker_tag }}'
-      credentials:
-        username: 'oauth2accesstoken'
-        password: '${{ env.GOOGLE_TOKEN }}'
     steps:
       - name: 'Checkout'
         uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # ratchet:actions/checkout@v4
