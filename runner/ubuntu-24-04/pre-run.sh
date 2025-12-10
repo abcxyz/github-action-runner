@@ -48,7 +48,7 @@ touch "${LOCK_FILE}"
       echo "Logging in to docker registry: ${gar_registry}"
       echo "${GOOGLE_TOKEN}" | docker login -u oauth2accesstoken --password-stdin "https://${gar_registry}"
     done
-  elif
+  else
     echo "Missing either GOOGLE_TOKEN or GOOGLE_ARTIFACT_REGISTRIES. Skipping login to docker registries."
   fi
 } >> "${PRERUN_LOG_FILE}"
