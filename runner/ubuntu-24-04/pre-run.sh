@@ -30,7 +30,7 @@ touch "${LOCK_FILE}"
     echo "Permission 'id-token: write' not set on job. Skipping generating google token."
   fi
 
-  gh repo clone "${GITHUB_REPOSITORY}" "/tmp/${GITHUB_REPOSITORY}" --branch "${GITHUB_REF}" --single-branch
+  gh repo clone "${GITHUB_REPOSITORY}" "/tmp/${GITHUB_REPOSITORY}" -- --branch "${GITHUB_REF}" --single-branch
 
   WORKLOAD_IDENTITY_PROVIDER="$(grep -E "WORKLOAD_IDENTITY_PROVIDER=" "/tmp/${GITHUB_REPOSITORY}"/.github/google.env | cut -d'=' -f2- || true)"
   WIF_SERVICE_ACCOUNT="$(grep -E "WORKLOAD_IDENTITY_PROVIDER=" "/tmp/${GITHUB_REPOSITORY}"/.github/google.env | cut -d'=' -f2- || true)"
