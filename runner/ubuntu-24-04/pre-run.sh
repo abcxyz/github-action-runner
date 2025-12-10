@@ -7,6 +7,7 @@ GITHUB_ENV="${GITHUB_ENV:?}"
 GITHUB_EVENT_PATH="${GITHUB_EVENT_PATH:?}"
 GITHUB_REPOSITORY="${GITHUB_REPOSITORY:?}"
 GITHUB_REF="${GITHUB_REF:?}"
+GITHUB_TOKEN="${GITHUB_TOKEN:?}"
 ACTIONS_ID_TOKEN_REQUEST_TOKEN="${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}"
 
 # log to a file to that gets dumped to stdout in cloud build logs.
@@ -30,7 +31,8 @@ touch "${LOCK_FILE}"
     echo "Permission 'id-token: write' not set on job. Skipping generating google token."
   fi
 
-  gh repo clone "${GITHUB_REPOSITORY}" "/tmp/${GITHUB_REPOSITORY}" -- --branch "${GITHUB_REF}" --single-branch
+  export GH_TOKEN="${GITHUB_TOKEN}"
+  gh repo clone "${GITHUB_REPOSITORY}" "/tmp/${GITHUB_REPOSITORY}" -- --branch "${GITHUB_REF}" --single-branch || true
 
   WORKLOAD_IDENTITY_PROVIDER="$(grep -E "WORKLOAD_IDENTITY_PROVIDER=" "/tmp/${GITHUB_REPOSITORY}"/.github/google.env | cut -d'=' -f2- || true)"
   WIF_SERVICE_ACCOUNT="$(grep -E "WORKLOAD_IDENTITY_PROVIDER=" "/tmp/${GITHUB_REPOSITORY}"/.github/google.env | cut -d'=' -f2- || true)"
