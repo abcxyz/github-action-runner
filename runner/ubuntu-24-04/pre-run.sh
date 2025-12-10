@@ -5,6 +5,8 @@ set -euo pipefail
 # default runner env vars.
 GITHUB_ENV="${GITHUB_ENV:?}"
 GITHUB_EVENT_PATH="${GITHUB_EVENT_PATH:?}"
+GITHUB_REPOSITORY="${GITHUB_REPOSITORY:?}"
+GITHUB_REF="${GITHUB_REF:?}"
 
 # log to a file to that gets dumped to stdout in cloud build logs.
 PRERUN_LOG_FILE="/tmp/pre-run.log"
@@ -13,11 +15,6 @@ touch "${PRERUN_LOG_FILE}"
 LOCK_FILE="/tmp/runner.lock"
 touch "${LOCK_FILE}"
 
-WIF_PROVIDER="projects/712187603283/locations/global/workloadIdentityPools/github-automation/providers/gar-ci-i"
-SA_EMAIL="github-automation-bot@gha-gar-ci-i-be70aa.iam.gserviceaccount.com"
-GAR_IMAGE="us-central1-docker.pkg.dev/github-action-runner-i-02/ci-images/smoke-test-container-test"
-GAR_IMAGE_REGISTRY=$(echo "${GAR_IMAGE}" | cut -d '/' -f 1)
-
 {
   echo "pre-run.sh script"
   echo "Runner lock file created at ${LOCK_FILE}. Idle timeout is now disabled."
@@ -25,29 +22,33 @@ GAR_IMAGE_REGISTRY=$(echo "${GAR_IMAGE}" | cut -d '/' -f 1)
   echo "ENV:"
   printenv
 
-  echo "ENV file /workspace/.env:"
-  cat /workspace/.env
-
   echo "Webhook event payload ${GITHUB_EVENT_PATH}:"
   cat "${GITHUB_EVENT_PATH}"
 
-  GOOGLE_TOKEN="$(/workspace/generate-token.sh "${WIF_PROVIDER}" "${SA_EMAIL}")"
-  echo "GOOGLE_TOKEN=${GOOGLE_TOKEN}" >> "${GITHUB_ENV}"
-  echo "${GOOGLE_TOKEN}" | docker login -u oauth2accesstoken --password-stdin "https://${GAR_IMAGE_REGISTRY}"
+  if [[ "${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" == "" ]]; then
+    echo "Permission 'id-token: write' not set on job. Skipping generating google token."
+  fi
 
-  echo "GITHUB_ENV file ${GITHUB_ENV}:"
-  cat "${GITHUB_ENV}"
+  gh repo clone "${GITHUB_REPOSITORY}" "/tmp/${GITHUB_REPOSITORY}" --branch "${GITHUB_REF}" --single-branch
 
-  echo ""
-  echo "cat /workspace/_work/_PipelineMapping/abcxyz/github-action-runner/PipelineFolder.json"
-  cat /workspace/_work/_PipelineMapping/abcxyz/github-action-runner/PipelineFolder.json
+  WORKLOAD_IDENTITY_PROVIDER="$(cat "/tmp/${GITHUB_REPOSITORY}"/.github/google.env | grep -E "WORKLOAD_IDENTITY_PROVIDER=" | cut -d'=' -f2- || true)"
+  WIF_SERVICE_ACCOUNT="$(cat "/tmp/${GITHUB_REPOSITORY}"/.github/google.env | grep -E "WIF_SERVICE_ACCOUNT=" | cut -d'=' -f2- || true)"
+  GOOGLE_ARTIFACT_REGISTRIES="$(cat "/tmp/${GITHUB_REPOSITORY}"/.github/google.env | grep -E "GOOGLE_ARTIFACT_REGISTRIES=" | cut -d'=' -f2- || true)"
 
-  echo ""
-  echo "ls -al /workspace/_work/github-action-runner/github-action-runner"
-  ls -al /workspace/_work/github-action-runner/github-action-runner
+  if [[ "${WORKLOAD_IDENTITY_PROVIDER}" != "" && "${WIF_SERVICE_ACCOUNT}" != "" ]]; then
+    GOOGLE_TOKEN="$(/workspace/generate-token.sh "${WORKLOAD_IDENTITY_PROVIDER}" "${WIF_SERVICE_ACCOUNT}")"
+    echo "GOOGLE_TOKEN=${GOOGLE_TOKEN}" >> "${GITHUB_ENV}"
+  else
+    echo "google.env file is missing WORKLOAD_IDENTITY_PROVIDER or WIF_SERVICE_ACCOUNT. Skipping generating token."
+  fi
 
-  echo ""
-  echo "cat /workspace/.runner"
-  cat /workspace/.runner
-
+  if [[ "${GOOGLE_TOKEN}" != "" && "${GOOGLE_ARTIFACT_REGISTRIES}" != "" ]]; then
+    gar_registries_array=(${GOOGLE_ARTIFACT_REGISTRIES//,/ })
+    for gar_registry in "${gar_registries_array[@]}"; do
+      echo "Logging in to docker registry: ${gar_registry}"
+      echo "${GOOGLE_TOKEN}" | docker login -u oauth2accesstoken --password-stdin "https://${gar_registry}"
+    done
+  elif
+    echo "Missing either GOOGLE_TOKEN or GOOGLE_ARTIFACT_REGISTRIES. Skipping login to docker registries."
+  fi
 } >> "${PRERUN_LOG_FILE}"
