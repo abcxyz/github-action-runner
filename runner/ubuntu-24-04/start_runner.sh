@@ -1,6 +1,24 @@
 #!/bin/bash
 set -euo pipefail
 
+# Calculate the time delta between now and the build request time.
+if [[ -n "${CREATE_BUILD_REQUEST_TIME_UTC:-}" ]]; then
+  # CREATE_BUILD_REQUEST_TIME_UTC should be an ISO 8601 timestamp (e.g., 2025-12-15T10:00:00Z).
+  REQUEST_TIMESTAMP_SECONDS=$(date -d "${CREATE_BUILD_REQUEST_TIME_UTC}" +%s 2>/dev/null)
+
+  if [[ -z "${REQUEST_TIMESTAMP_SECONDS}" ]]; then
+    cat <<EOF
+{"message": "Invalid or unparseable CREATE_BUILD_REQUEST_TIME_UTC value, skipping delta calculation.", "value": "${CREATE_BUILD_REQUEST_TIME_UTC}"}
+EOF
+  else
+    CURRENT_TIME_UTC=$(date +%s)
+    DELTA=$((CURRENT_TIME_UTC - REQUEST_TIMESTAMP_SECONDS))
+    cat <<EOF
+{"message": "Time from build request to runner start", "delta_seconds": ${DELTA}}
+EOF
+  fi
+fi
+
 # Uncompress the Just-In-Time configuration.
 ENCODED_JIT_CONFIG="$(echo "${ENCODED_JIT_CONFIG}" | base64 -d | gunzip)"
 
