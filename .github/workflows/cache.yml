@@ -19,13 +19,16 @@ on:
     - cron: '0 0 * * *' # Run at the beginning of every day
 
 env:
+  GCB_CACHE_IMAGE: 'gcr.io/cloud-builders/docker'
+  GCP_LOCATION: 'us'
+  GCP_PACKAGE_NAME: 'github-action-runner'
+  GCP_PROJECT_ID: 'abcxyz-artifacts'
+  GCP_REPO_NAME: 'docker-images'
+  IMAGE_PATH: 'us-docker.pkg.dev/abcxyz-artifacts/docker-images/github-action-runner'
   INTEGRATION_PROJECT_ID: 'abcxyz-gar-runner-i-4f'
   INTEGRATION_RUNNER_SA: 'abcxyz-gar-runner-sa@abcxyz-gar-runner-i-4f.iam.gserviceaccount.com'
-  GCP_PROJECT: 'abcxyz-artifacts'
-  IMAGE_PATH: 'us-docker.pkg.dev/abcxyz-artifacts/docker-images/github-action-runner'
-  GCB_CACHE_IMAGE: 'gcr.io/cloud-builders/docker'
-  RUNNER_NEXT_TAG: 'runner-next'
   RUNNER_CURRENT_TAG: 'runner-current'
+  RUNNER_NEXT_TAG: 'runner-next'
   RUNNER_PREVIOUS_TAG: 'runner-previous'
 
 jobs:
@@ -126,7 +129,7 @@ jobs:
 
           while true; do
             # Fetch the logs
-            gcloud builds log "$BUILD_ID" --project="${{ env.INTEGRATION_PROJECT_ID }}" > "$BUILD_LOG" 2>/dev/null
+            gcloud builds log "$BUILD_ID" --project="${{ env.INTEGRATION_PROJECT_ID }}" > "$BUILD_LOG"
 
             # Check if the log contains the digest info we need
             if grep -F "${{ env.IMAGE_PATH }}" "$BUILD_LOG" | grep -F -q "${{ env.RUNNER_NEXT_TAG }}"; then
@@ -200,7 +203,7 @@ jobs:
 
           # 2. Idempotency Gate: Check if the actual digest is already the runner-current digest.
           RUNNER_CURRENT_ACTUAL_DIGEST=$(gcloud artifacts docker images describe "${{ env.IMAGE_PATH }}:${{ env.RUNNER_CURRENT_TAG }}" \
-            --format='value(image_summary.digest)' --project="${{ env.GCP_PROJECT }}" 2>/dev/null)
+            --format='value(image_summary.digest)' --project="${{ env.GCP_PROJECT_ID }}")
 
           if [ "$RUNNER_NEXT_ACTUAL_DIGEST" == "$RUNNER_CURRENT_ACTUAL_DIGEST" ]; then
               echo "Target image is already promoted ($RUNNER_NEXT_ACTUAL_DIGEST). No action needed."
@@ -231,7 +234,7 @@ jobs:
             gcloud artifacts docker tags add \
               "${{ env.IMAGE_PATH }}@$RUNNER_CURRENT_ACTUAL_DIGEST" \
               "${{ env.IMAGE_PATH }}:${{ env.RUNNER_PREVIOUS_TAG }}" \
-              --project="${{ env.GCP_PROJECT }}" --quiet
+              --project="${{ env.GCP_PROJECT_ID }}" --quiet
           else
             echo "No image found for tag '${{ env.RUNNER_CURRENT_TAG }}'. Skipping previous tag update."
           fi
@@ -241,7 +244,7 @@ jobs:
           gcloud artifacts docker tags add \
             "${{ env.IMAGE_PATH }}@$RUNNER_NEXT_ACTUAL_DIGEST" \
             "${{ env.IMAGE_PATH }}:${{ env.RUNNER_CURRENT_TAG }}" \
-            --project="${{ env.GCP_PROJECT }}" --quiet
+            --project="${{ env.GCP_PROJECT_ID }}" --quiet
 
           echo "Tag promotion successful!"
 
@@ -255,19 +258,26 @@ jobs:
               echo "unknown"
               return
             fi
-            # The '|| true' handles cases where a digest might exist but has no tags.
-            gcloud artifacts docker images list-tags \
-              "${{ env.IMAGE_PATH }}@${digest}" \
-              --project="${{ env.GCP_PROJECT }}" \
-              --filter='tags ~ ^v' \
-              --format='get(tags)' \
-              --limit=1 | cut -d';' -f1 || true
+
+            # Get all tags for the package in JSON format
+            local all_tags_json
+            all_tags_json=$(gcloud artifacts tags list \
+              --repository="${{ env.GCP_REPO_NAME }}" \
+              --package="${{ env.GCP_PACKAGE_NAME }}" \
+              --location="${{ env.GCP_LOCATION }}" \
+              --project="${{ env.GCP_PROJECT_ID }}" \
+              --format="json" || true)
+
+            # Find tags for the given digest using jq, then filter for the 'v' tag
+            jq -r --arg digest "$digest" '.[] | select(.version | contains($digest)) | .name | split("/") | last' <<< "${all_tags_json}" | \
+              grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-ubuntu-24-04-amd64$' | \
+              head -n 1 || true
           }
 
           print_tag_state() {
             local tag_name="$1"
             local digest
-            digest=$(gcloud artifacts docker images describe "${{ env.IMAGE_PATH }}:${tag_name}" --format='value(image_summary.digest)' --project="${{ env.GCP_PROJECT }}" 2>/dev/null || true)
+            digest=$(gcloud artifacts docker images describe "${{ env.IMAGE_PATH }}:${tag_name}" --format='value(image_summary.digest)' --project="${{ env.GCP_PROJECT_ID }}" || true)
 
             if [ -n "$digest" ]; then
               local version_tag
