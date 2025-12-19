@@ -424,17 +424,45 @@ jobs:
   # https://github.com/actions/runner/blob/463496e4fb25773f9409c94ba8209f061a0aa612/src/Runner.Worker/ContainerOperationProvider.cs#L539-L557
   #
   # We implement a hacky workaround for this that makes this pass.
-  test-container-feature:
+  test-container-feature-using-gh-packages:
     runs-on: '${{ inputs.runs-on }}'
     needs: ['maybe-create-smoke-test-image']
     permissions:
       contents: 'read'
       packages: 'read'
+      id-token: 'write'
     container:
       image: 'ghcr.io/${{ github.repository }}/smoke-test-container-test:${{ needs.maybe-create-smoke-test-image.outputs.docker_tag }}'
       credentials:
         username: '${{ github.actor }}'
         password: '${{ secrets.GITHUB_TOKEN }}'
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # ratchet:actions/checkout@v4
+
+      - name: 'Test runs on custom container'
+        shell: 'bash'
+        run: |
+          UNIQUE_FILE_IN_CONTAINER="/smoke-test-container-test/index.txt"
+          if [ ! -f "${UNIQUE_FILE_IN_CONTAINER}" ]; then
+            echo "File not found: ${UNIQUE_FILE_IN_CONTAINER}"
+            exit 1
+          else
+            echo "Found file: ${UNIQUE_FILE_IN_CONTAINER}"
+          fi
+          exit 1
+
+  test-container-feature-using-gar:
+    runs-on: '${{ inputs.runs-on }}'
+    needs: ['maybe-create-smoke-test-image']
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+    env:
+      WORKLOAD_IDENTITY_PROVIDER: 'projects/712187603283/locations/global/workloadIdentityPools/github-automation/providers/gar-ci-i'
+      WIF_SERVICE_ACCOUNT: 'github-automation-bot@gha-gar-ci-i-be70aa.iam.gserviceaccount.com'
+    container:
+      image: 'us-central1-docker.pkg.dev/github-action-runner-i-02/ci-images/smoke-test-container-test:${{ needs.maybe-create-smoke-test-image.outputs.docker_tag }}'
     steps:
       - name: 'Checkout'
         uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # ratchet:actions/checkout@v4

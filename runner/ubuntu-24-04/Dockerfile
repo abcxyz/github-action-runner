@@ -98,7 +98,9 @@ RUN curl -f -L -o runner.tar.gz https://github.com/actions/runner/releases/downl
 
 # Copy pre-run script and add it to actions runner config file
 COPY pre-run.sh /actions-runner/pre-run.sh
-RUN chmod +x /actions-runner/pre-run.sh \
+COPY generate-token.sh /actions-runner/generate-token.sh
+RUN chmod +x /actions-runner/generate-token.sh \
+    && chmod +x /actions-runner/pre-run.sh \
     && echo "ACTIONS_RUNNER_HOOK_JOB_STARTED=/actions-runner/pre-run.sh" >> /actions-runner/.env
 
 RUN /actions-runner/bin/installdependencies.sh \
