@@ -59,7 +59,8 @@ ENV IDLE_TIMEOUT_SECONDS=300
 
 ARG ACTION_RUNNER_VERSION=2.330.0
 ARG GH_VERSION=2.75.1
-ARG GH_PACKAGE=gh_${GH_VERSION}_linux_amd64.tar.gz
+ARG TARGETARCH
+ARG GH_PACKAGE=gh_${GH_VERSION}_linux_${TARGETARCH:-amd64}.tar.gz
 ARG GH_INSTALL_DIR=/opt/gh-cli-${GH_VERSION}
 
 WORKDIR /actions-runner
@@ -91,7 +92,11 @@ RUN apt-get update \
 # Add the official Docker-in-Docker entrypoint script for a reliable DinD setup
 COPY --from=docker:dind /usr/local/bin/dockerd-entrypoint.sh /usr/local/bin/
 
-RUN curl -f -L -o runner.tar.gz https://github.com/actions/runner/releases/download/v${ACTION_RUNNER_VERSION}/actions-runner-linux-x64-${ACTION_RUNNER_VERSION}.tar.gz \
+RUN case ${TARGETARCH:-amd64} in \
+      amd64) RUNNER_ARCH="x64" ;; \
+      arm64) RUNNER_ARCH="arm64" ;; \
+    esac && \
+    curl -f -L -o runner.tar.gz https://github.com/actions/runner/releases/download/v${ACTION_RUNNER_VERSION}/actions-runner-linux-${RUNNER_ARCH}-${ACTION_RUNNER_VERSION}.tar.gz \
     && tar xzf ./runner.tar.gz \
     && rm runner.tar.gz \
     && rm -rf /var/lib/apt/lists/*
@@ -139,10 +144,10 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends wget tar ca-certificates && \
     curl -f -L -o /tmp/${GH_PACKAGE} https://github.com/cli/cli/releases/download/v${GH_VERSION}/${GH_PACKAGE} -O  && \
     tar -xzf /tmp/${GH_PACKAGE} -C /opt && \
-    mv /opt/gh_${GH_VERSION}_linux_amd64/bin/gh /usr/local/bin/gh && \
+    mv /opt/gh_${GH_VERSION}_linux_${TARGETARCH:-amd64}/bin/gh /usr/local/bin/gh && \
     chmod +x /usr/local/bin/gh && \
     gh --version && \
-    rm -rf /tmp/${GH_PACKAGE} /opt/gh_${GH_VERSION}_linux_amd64 && \
+    rm -rf /tmp/${GH_PACKAGE} /opt/gh_${GH_VERSION}_linux_${TARGETARCH:-amd64} && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
