@@ -347,6 +347,24 @@ jobs:
       - name: 'Use abc'
         run: 'abc templates describe github.com/abcxyz/abc/t/rest_server@v0.10.0'
 
+  test-compile-rust:
+    runs-on: '${{ inputs.runs-on }}'
+    needs: ['deploy-dispatcher']
+    steps:
+      - name: 'apt install'
+        shell: 'bash'
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update -y
+          sudo apt install -y --no-install-recommends build-essential libudev-dev openssl libssl-dev linux-tools-common gcc-multilib libssl-dev:i386 pkg-config
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly
+      - name: 'test compile rust'
+        shell: 'bash'
+        run: |
+          source "$HOME/.cargo/env"
+          cargo install probe-rs-tools
+          exit 1
+
   test-build-push-runner:
     runs-on: '${{ inputs.runs-on }}'
     needs: ['deploy-dispatcher']
