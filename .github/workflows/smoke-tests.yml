@@ -33,7 +33,7 @@ env:
 
   DISPATCHER_DOCKER_REPO: 'us-docker.pkg.dev/abcxyz-artifacts/docker-images'
   DISPATCHER_IMAGE_NAME: 'github-action-dispatcher'
-  DISPATCHER_VERSION: 'v0.0.3'
+  DISPATCHER_VERSION: 'v0.0.4'
 
   INTEGRATION_RUNNER_LABEL: 'github-action-runner-integration'
   INTEGRATION_RUNNER_LOCATION: 'us-central1'
