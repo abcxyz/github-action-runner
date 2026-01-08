@@ -21,6 +21,7 @@ on:
 env:
   GCB_CACHE_IMAGE: 'gcr.io/cloud-builders/docker'
   GCP_LOCATION: 'us'
+  GCP_CACHE_TARGET_LOCATION: 'us-central1'
   GCP_PACKAGE_NAME: 'github-action-runner'
   GCP_PROJECT_ID: 'abcxyz-artifacts'
   GCP_REPO_NAME: 'docker-images'
@@ -78,6 +79,7 @@ jobs:
             --no-source \
             --quiet \
             --async \
+            --region="${{ env.GCP_CACHE_TARGET_LOCATION }}" \
             --format='value(id)')
 
           if [ -z "$BUILD_ID" ]; then
@@ -95,6 +97,7 @@ jobs:
           while true; do
             STATUS=$(gcloud builds describe "$BUILD_ID" \
               --project="${{ env.INTEGRATION_PROJECT_ID }}" \
+              --region="${{ env.GCP_CACHE_TARGET_LOCATION }}" \
               --format='value(status)')
 
             echo "Current build status: $STATUS"
@@ -104,7 +107,7 @@ jobs:
             elif [[ "$STATUS" == "FAILURE" || "$STATUS" == "INTERNAL_ERROR" || "$STATUS" == "TIMEOUT" || "$STATUS" == "CANCELLED" ]]; then
               echo "::error:: Build failed with status: $STATUS"
               # Attempt to fetch logs even on failure for debugging
-              gcloud builds log "$BUILD_ID" --project="${{ env.INTEGRATION_PROJECT_ID }}" || true
+              gcloud builds log "$BUILD_ID" --project="${{ env.INTEGRATION_PROJECT_ID }}" --region="${{ env.GCP_CACHE_TARGET_LOCATION }}" || true
               exit 1
             fi
 
@@ -129,7 +132,7 @@ jobs:
 
           while true; do
             # Fetch the logs
-            gcloud builds log "$BUILD_ID" --project="${{ env.INTEGRATION_PROJECT_ID }}" > "$BUILD_LOG"
+            gcloud builds log "$BUILD_ID" --project="${{ env.INTEGRATION_PROJECT_ID }}" --region="${{ env.GCP_CACHE_TARGET_LOCATION }}" > "$BUILD_LOG"
 
             # Check if the log contains the digest info we need
             if grep -F "${{ env.IMAGE_PATH }}" "$BUILD_LOG" | grep -F -q "${{ env.RUNNER_NEXT_TAG }}"; then
